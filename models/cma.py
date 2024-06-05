@@ -71,7 +71,7 @@ class CMA(DiffusionBase):
         images = self.latents_to_images(latents)
         scores = self.get_scores(images)
 
-        init_x = latents[scores.argmin()]
+        init_x = latents[torch.sort(scores).indices[len(scores)//2].item()]
 
         self.es = cma.CMAEvolutionStrategy(
             self._x_flatten(init_x).cpu().numpy(),
