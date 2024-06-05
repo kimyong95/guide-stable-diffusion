@@ -17,8 +17,8 @@ from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDP
 
 class FinetuneDiffusion(DiffusionBase):
 
-    def __init__(self, prompt, target_path, num_sampling_steps, training_batch_size, lr):
-        super().__init__(prompt,target_path)
+    def __init__(self, prompt, num_sampling_steps, training_batch_size, lr):
+        super().__init__(prompt)
 
         self.num_sampling_steps = num_sampling_steps
         self.training_batch_size = training_batch_size
@@ -33,7 +33,6 @@ class FinetuneDiffusion(DiffusionBase):
         # dummy parameters for pytorch lightning optimizer to work
         self.dummy = torch.nn.Parameter(torch.zeros(1))
         self.automatic_optimization = False
-        self.name = "finetune"
 
     def get_noise(self, batch_size):
         batch_mu = einops.repeat(self.mu, 'T D -> T B D', B=batch_size)
@@ -67,7 +66,6 @@ class FinetuneDiffusion(DiffusionBase):
             latents=prior_zeros.type(torch.float16),
             given_noise=noise.type(torch.float16)
         ).images
-        # images = torch.stack([torchvision.transforms.ToTensor()(image) for image in images])
 
         self.log_images(images)
         scores = self.get_scores(images)

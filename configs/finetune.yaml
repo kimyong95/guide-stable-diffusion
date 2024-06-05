@@ -24,7 +24,6 @@ data:
 model:
   class_path: models.finetune.FinetuneDiffusion
   init_args:
-    target_path: "data/target.png"
     num_sampling_steps: 50
     training_batch_size: 32
     lr: 50.0
