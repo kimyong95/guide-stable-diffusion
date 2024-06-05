@@ -62,6 +62,14 @@ class DiffusionBase(LightningBase):
         self.scheduler = FinetuneDPMSolverMultistepScheduler.from_pretrained(model_id, subfolder="scheduler", algorithm_type="sde-dpmsolver++")
         self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=self.scheduler, torch_dtype=torch.float16)
         
+        self.pipe.unet.eval()
+        self.pipe.unet.train = LightningBase.disabled_train_func
+        self.pipe.unet.requires_grad_(False)
+
+        self.pipe.vae.eval()
+        self.pipe.vae.train = LightningBase.disabled_train_func
+        self.pipe.vae.requires_grad_(False)
+
         self.sample_size = self.pipe.unet.config.sample_size
         self.channels = self.pipe.unet.config.in_channels
         
@@ -76,10 +84,17 @@ class DiffusionBase(LightningBase):
 
     # maximize clip similarity
     # minimize total_scores
+    # input: PIL images
     def get_scores(self, images):        
-
         total_scores = - self.clip_similarity(images)
         return total_scores
+
+    def _x_flatten(self, x):
+        return einops.rearrange(x, '... C W H -> ... (C W H)', C=self.channels, W=self.sample_size, H=self.sample_size)
+
+    def _x_unflatten(self, x):
+        return einops.rearrange(x, '... (C W H) -> ... C W H', C=self.channels, W=self.sample_size, H=self.sample_size)
+
 
     
     def log_score(self, scores, stage="train"):

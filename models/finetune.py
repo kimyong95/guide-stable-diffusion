@@ -43,12 +43,6 @@ class FinetuneDiffusion(DiffusionBase):
 
         return batch_noise
 
-    def _x_flatten(self, x):
-        return einops.rearrange(x, '... C W H -> ... (C W H)', C=self.channels, W=self.sample_size, H=self.sample_size)
-
-    def _x_unflatten(self, x):
-        return einops.rearrange(x, '... (C W H) -> ... C W H', C=self.channels, W=self.sample_size, H=self.sample_size)
-
     @torch.no_grad()
     def training_step(self, _, __):
 

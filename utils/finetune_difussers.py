@@ -287,10 +287,19 @@ class FinetuneStableDiffusionPipeline(StableDiffusionPipeline):
 
                 # compute the previous noisy sample x_t -> x_t-1
                 
+                # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
+                if isinstance(given_noise, torch.Tensor):
+                    _given_noise = given_noise[i]
+                elif callable(given_noise):
+                    _given_noise = given_noise(latents, i)
+                elif given_noise is None:
+                    _given_noise = None
+                # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
+
                 latents = self.scheduler.step(
                     noise_pred, t, latents,
                     # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
-                    given_noise = given_noise if given_noise == None else given_noise[i],
+                    given_noise = _given_noise,
                     # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
                     **extra_step_kwargs,
                     return_dict=False
@@ -325,3 +334,5 @@ class FinetuneStableDiffusionPipeline(StableDiffusionPipeline):
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
 
     ######################### copy from parent #########################
+
+

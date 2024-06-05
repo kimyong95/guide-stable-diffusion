@@ -8,7 +8,7 @@ trainer:
     class_path: WandbLogger
     init_args:
       project: finetune-stable-diffusion
-      name: finetune
+      name: cma
   callbacks:
   - class_path: WandbModelCheckpoint
     init_args:
@@ -22,9 +22,8 @@ data:
   class_path: datamodule.DummyDataModule
   init_args: {}
 model:
-  class_path: models.finetune.FinetuneDiffusion
+  class_path: models.cma.CMA
   init_args:
     num_sampling_steps: 50
     training_batch_size: 32
-    lr: 50.0
     prompt: "a white puppy with golden wings"
