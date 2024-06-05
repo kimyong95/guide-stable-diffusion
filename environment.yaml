@@ -1,0 +1,27 @@
+name: finetune-stable-diffusion
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+dependencies:
+  - python=3.9
+  - ipykernel=6
+  - jupyter_core=5.7
+  - matplotlib=3.8
+  - palettable=3.3
+  - numpy=1.23
+  - tqdm=4.65
+  - einops=0.7
+  - pytorch-cuda=12.1
+  - pytorch=2.2
+  - torchvision=0.17
+  - torchaudio=2.2
+  - lightning=2.2
+  - wandb=0.16
+  - diffusers=0.21
+  - accelerate=0.30
+  - scipy=1.12
+  - transformers=4.37.2
+  - open-clip-torch=2.24.0
+  - pip:
+    - jsonargparse[signatures]==4.27.7

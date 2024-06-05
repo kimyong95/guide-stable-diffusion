@@ -1,0 +1,10 @@
+
+
+trainer:
+  logger:
+    class_path: DummyLogger
+  callbacks:
+  - class_path: WandbModelCheckpoint
+    init_args:
+      save_last: False
+      every_n_epochs: 99999999
