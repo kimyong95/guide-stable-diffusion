@@ -23,5 +23,6 @@ dependencies:
   - scipy=1.12
   - transformers=4.37.2
   - open-clip-torch=2.24.0
+  - cma=3.3
   - pip:
     - jsonargparse[signatures]==4.27.7
