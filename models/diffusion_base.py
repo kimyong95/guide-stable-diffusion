@@ -82,6 +82,11 @@ class DiffusionBase(LightningBase):
         self.clip_similarity = self.clip_similarity.to(self.device)
         return self
 
+    def latents_to_images(self, latents):
+        images = self.pipe.vae.decode(latents / self.pipe.vae.config.scaling_factor, return_dict=False)[0]
+        images = self.pipe.image_processor.postprocess(images)
+        return images
+
     # maximize clip similarity
     # minimize total_scores
     # input: PIL images
@@ -95,8 +100,6 @@ class DiffusionBase(LightningBase):
     def _x_unflatten(self, x):
         return einops.rearrange(x, '... (C W H) -> ... C W H', C=self.channels, W=self.sample_size, H=self.sample_size)
 
-
-    
     def log_score(self, scores, stage="train"):
         
         self.log(f"{stage}/score_mean", scores.mean())
@@ -109,4 +112,4 @@ class DiffusionBase(LightningBase):
             image_dir = "debug_images"
         os.makedirs(image_dir, exist_ok=True)
         grid_image = torchvision.utils.make_grid(images_tensors, nrow=find_closest_factors(len(images_tensors)))
-        torchvision.utils.save_image(grid_image, f"{image_dir}/{self.global_step}.jpg", format='jpeg')
+        torchvision.utils.save_image(grid_image, f"{image_dir}/{self.current_epoch}.jpg", format='jpeg')

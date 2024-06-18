@@ -25,9 +25,9 @@ class FinetuneDiffusion(DiffusionBase):
 
         self.lr = lr
 
-        mu = torch.zeros(num_sampling_steps, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
+        mu = torch.zeros(num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
         self.register_buffer('mu', mu)
-        sigma = torch.ones(num_sampling_steps, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
+        sigma = torch.ones(num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
         self.register_buffer('sigma', sigma) # entries is variance
 
         # dummy parameters for pytorch lightning optimizer to work
@@ -52,13 +52,13 @@ class FinetuneDiffusion(DiffusionBase):
 
         noise = self._x_unflatten(noise)
 
-        prior_zeros = torch.zeros_like(noise[0])
+        init_latents = noise[0]
 
-        images = self.pipe(
+        out = self.pipe(
             self.prompt,
             num_images_per_prompt=batch_size,
-            latents=prior_zeros.type(torch.float16),
-            given_noise=noise.type(torch.float16)
+            latents=init_latents.type(torch.float16),
+            given_noise=noise[1:].type(torch.float16)
         ).images
 
         self.log_images(images)

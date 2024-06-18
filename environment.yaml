@@ -24,5 +24,8 @@ dependencies:
   - transformers=4.37.2
   - open-clip-torch=2.24.0
   - cma=3.3
+  - scikit-learn=1.4.2
+  - gpytorch::gpytorch=1.10
+  - ipywidgets=8.1
   - pip:
     - jsonargparse[signatures]==4.27.7

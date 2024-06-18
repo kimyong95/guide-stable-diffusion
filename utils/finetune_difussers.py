@@ -289,9 +289,9 @@ class FinetuneStableDiffusionPipeline(StableDiffusionPipeline):
                 
                 # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
                 if isinstance(given_noise, torch.Tensor):
-                    _given_noise = given_noise[i]
+                    _given_noise = given_noise[i].type(prompt_embeds.dtype)
                 elif callable(given_noise):
-                    _given_noise = given_noise(latents, i)
+                    _given_noise = given_noise(latents, i).type(prompt_embeds.dtype)
                 elif given_noise is None:
                     _given_noise = None
                 # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #

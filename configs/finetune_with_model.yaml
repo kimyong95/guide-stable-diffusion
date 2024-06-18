@@ -1,0 +1,30 @@
+# pytorch cli config
+seed_everything: 0
+
+trainer:
+  log_every_n_steps: 1
+  max_epochs: 1000
+  logger:
+    class_path: WandbLogger
+    init_args:
+      project: finetune-stable-diffusion
+      name: finetune-with-model
+  callbacks:
+  - class_path: WandbModelCheckpoint
+    init_args:
+      monitor: "train/score_mean"
+      mode: max
+      save_top_k: -1
+      save_last: True
+      every_n_epochs: 10
+      filename: '{epoch:03d}'
+data:
+  class_path: datamodule.DummyDataModule
+  init_args: {}
+model:
+  class_path: models.finetune_with_model.FinetuneDiffusionWithModel
+  init_args:
+    num_sampling_steps: 50
+    training_batch_size: 32
+    lr: 50.0
+    prompt: "a white puppy with golden wings"

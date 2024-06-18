@@ -83,11 +83,6 @@ class CMA(DiffusionBase):
 
         return self
 
-    def latents_to_images(self, latents):
-        images = self.pipe.vae.decode(latents / self.pipe.vae.config.scaling_factor, return_dict=False)[0]
-        images = self.pipe.image_processor.postprocess(images)
-        return images 
-
     def test_step(self, _, __):
         
         return
