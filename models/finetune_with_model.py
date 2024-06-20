@@ -86,7 +86,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             mean = yj.mean
             lcb = yj.mean - 2*(yj.covariance_matrix.item()**0.5)
             loss = mean + 0.5 * lcb
-            grad = torch.autograd.grad(mean, xj, retain_graph=False, allow_unused=True)[0]
+            grad = torch.autograd.grad(loss, xj, retain_graph=False, allow_unused=True)[0]
             grad = torch.zeros_like(xj) if grad is None else grad
             y_pred_grad.append(grad)
         
@@ -107,32 +107,25 @@ class FinetuneDiffusionWithModel(DiffusionBase):
     def training_step(self, _, __):
 
         batch_size = self.training_batch_size
-        
-        prior_zeros = torch.zeros([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device)
-        # prior_epsilon = torch.randn([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device)
+
         mu = torch.zeros([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device)
         
-        beta = 50.0
-        for l in range(self.current_epoch):
-            get_mu = lambda x, i: mu
+        beta = 50
+        epsilon = torch.randn([self.num_sampling_steps, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32)
+        L = 1+self.current_epoch
+        for l in range(L):
+
+            given_noise = mu[None,:] + epsilon
+            prior = mu + torch.randn([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device)
             latents = self.pipe(
                 self.prompt,
                 num_images_per_prompt=batch_size,
-                latents=prior_zeros.type(torch.float16),
+                latents=prior.type(torch.float16),
                 output_type="latent",
-                given_noise=get_mu,
+                given_noise=given_noise,
             ).images
 
-            mu += beta * self.get_mu(latents)
-
-        get_noise = lambda x, i: mu + torch.randn_like(x.type(torch.float32))
-        latents = self.pipe(
-            self.prompt,
-            num_images_per_prompt=batch_size,
-            latents=prior_zeros.type(torch.float16),
-            output_type="latent",
-            given_noise=get_noise,
-        ).images
+            mu += beta * (L-l) * self.get_mu(latents)
 
         self.log_params(mu.mean(0))
 
