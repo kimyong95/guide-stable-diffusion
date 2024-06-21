@@ -111,12 +111,13 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         mu = torch.zeros([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device)
         
         beta = 50
-        epsilon = torch.randn([self.num_sampling_steps, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32)
+        epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32)
         L = 1+self.current_epoch
         for l in range(L):
-
-            given_noise = mu[None,:] + epsilon
-            prior = mu + torch.randn([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device)
+            
+            prior = mu + epsilon[0]
+            given_noise = mu[None,:] + epsilon[1:]
+            
             latents = self.pipe(
                 self.prompt,
                 num_images_per_prompt=batch_size,
