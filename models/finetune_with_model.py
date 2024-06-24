@@ -112,7 +112,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         
         beta = 50
         epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32)
-        L = 1+self.current_epoch
+        L = 1+int(self.current_epoch ** 0.5)
         for l in range(L):
             
             prior = mu + epsilon[0]
