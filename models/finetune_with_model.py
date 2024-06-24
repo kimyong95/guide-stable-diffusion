@@ -86,7 +86,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             mean = yj.mean
             lcb = yj.mean - 2*(yj.covariance_matrix.item()**0.5)
             loss = mean + 0.5 * lcb
-            grad = torch.autograd.grad(loss, xj, retain_graph=False, allow_unused=True)[0]
+            grad = torch.autograd.grad(mean, xj, retain_graph=False, allow_unused=True)[0]
             grad = torch.zeros_like(xj) if grad is None else grad
             y_pred_grad.append(grad)
         
