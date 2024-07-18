@@ -1,3 +1,6 @@
 wandb/**/*
-debug_images/**/*
+debug_logs/**/*
 data/**/*
+archives/**/*
+tests/**/*
+__pycache__/**/*

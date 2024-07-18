@@ -29,3 +29,6 @@ dependencies:
   - ipywidgets=8.1
   - pip:
     - jsonargparse[signatures]==4.27.7
+    - image-reward==1.5
+    - git+https://github.com/haotian-liu/LLaVA.git
+    - bert-score==0.3.13

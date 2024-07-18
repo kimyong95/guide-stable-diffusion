@@ -17,7 +17,7 @@ from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDP
 
 class FinetuneDiffusion(DiffusionBase):
 
-    def __init__(self, prompt, num_sampling_steps, training_batch_size, lr):
+    def __init__(self, prompt, num_sampling_steps, training_batch_size, lr, reward_func):
         super().__init__(prompt)
 
         self.num_sampling_steps = num_sampling_steps

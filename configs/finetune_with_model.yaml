@@ -28,3 +28,4 @@ model:
     training_batch_size: 32
     lr: 50.0
     prompt: "a white puppy with golden wings"
+    reward_func: "llava_web"

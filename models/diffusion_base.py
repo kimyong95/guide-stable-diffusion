@@ -12,10 +12,9 @@ import lightning
 import PIL
 import matplotlib.pyplot as plt
 from torchmetrics.image import StructuralSimilarityIndexMeasure
-import open_clip
-from PIL import Image
 
 from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDPMSolverMultistepScheduler
+from utils.rewards import ClipSimilarity, LLaVA, LLaVA_Web
 
 def find_closest_factors(n):
     # Start from the square root of n and move downwards to find the closest factors
@@ -23,38 +22,15 @@ def find_closest_factors(n):
         if n % i == 0:
             return i
 
-class ClipSimilarity:
-
-    def __init__(self, prompt):
-
-        self.model, _, self.preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
-        self.model.eval()
-        self.model.train = LightningBase.disabled_train_func
-        self.model.requires_grad_(False)
-        
-        tokenizer = open_clip.get_tokenizer('ViT-B-32')
-        text_features = self.model.encode_text(tokenizer([prompt]))
-        text_features /= text_features.norm(dim=-1, keepdim=True)
-        self.text_features = text_features
-    
-    # input: PIL images
-    def __call__(self, images):
-        proprocessed_images = torch.stack([self.preprocess(image) for image in images]).to(self.device)
-        image_features = self.model.encode_image(proprocessed_images)
-        image_features /= image_features.norm(dim=-1, keepdim=True)
-        
-        cosine_similarity = einops.einsum(image_features, self.text_features, 'B D, B D -> B')
-        return cosine_similarity
-    
-    def to(self, device):
-        self.model.to(device)
-        self.text_features = self.text_features.to(device)
-        self.device = device
-        return self
+REWAED_FUNC = {
+    "clip_sim": ClipSimilarity,
+    "llava": LLaVA,
+    "llava_web": LLaVA_Web,
+}
 
 class DiffusionBase(LightningBase):
 
-    def __init__(self, prompt):
+    def __init__(self, prompt, reward_func):
 
         super().__init__()
 
@@ -66,6 +42,10 @@ class DiffusionBase(LightningBase):
         self.pipe.unet.train = LightningBase.disabled_train_func
         self.pipe.unet.requires_grad_(False)
 
+        self.pipe.text_encoder.eval()
+        self.pipe.text_encoder.train = LightningBase.disabled_train_func
+        self.pipe.text_encoder.requires_grad_(False)
+
         self.pipe.vae.eval()
         self.pipe.vae.train = LightningBase.disabled_train_func
         self.pipe.vae.requires_grad_(False)
@@ -74,12 +54,14 @@ class DiffusionBase(LightningBase):
         self.channels = self.pipe.unet.config.in_channels
         
         self.prompt = prompt
-        self.clip_similarity = ClipSimilarity(prompt)
+
+        assert reward_func in REWAED_FUNC
+        self.reward_func = REWAED_FUNC[reward_func]()
 
     def on_fit_start(self):
         super().on_fit_start()
         self.pipe = self.pipe.to(self.device)
-        self.clip_similarity = self.clip_similarity.to(self.device)
+        self.reward_func = self.reward_func.to(self.device)
         return self
 
     def latents_to_images(self, latents):
@@ -87,12 +69,15 @@ class DiffusionBase(LightningBase):
         images = self.pipe.image_processor.postprocess(images)
         return images
 
-    # maximize clip similarity
+    # maximize reward
     # minimize total_scores
     # input: PIL images
-    def get_scores(self, images):        
-        total_scores = - self.clip_similarity(images)
-        return total_scores
+    def get_scores(self, images):
+
+        total_scores, outputs = self.reward_func(images, self.prompt)
+        total_scores = - total_scores
+
+        return total_scores, outputs
 
     def _x_flatten(self, x):
         return einops.rearrange(x, '... C W H -> ... (C W H)', C=self.channels, W=self.sample_size, H=self.sample_size)
@@ -104,12 +89,9 @@ class DiffusionBase(LightningBase):
         
         self.log(f"{stage}/score_mean", scores.mean())
     
-    def log_images(self, images):
+    def log_images(self, images, subfix=""):
         images_tensors = torch.stack([torchvision.transforms.ToTensor()(image) for image in images])
-        if isinstance(self.logger, lightning.pytorch.loggers.WandbLogger):
-            image_dir = self.logger.experiment.dir.rstrip("/files") + f"/images"
-        else:
-            image_dir = "debug_images"
+        image_dir = str(self.logger.experiment.dir).removesuffix("/files") + f"/images"
         os.makedirs(image_dir, exist_ok=True)
         grid_image = torchvision.utils.make_grid(images_tensors, nrow=find_closest_factors(len(images_tensors)))
-        torchvision.utils.save_image(grid_image, f"{image_dir}/{self.current_epoch}.jpg", format='jpeg')
+        torchvision.utils.save_image(grid_image, f"{image_dir}/{self.current_epoch}{subfix}.jpg", format='jpeg')

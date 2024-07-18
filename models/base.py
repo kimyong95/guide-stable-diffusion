@@ -4,6 +4,10 @@ import lightning as L
 import yaml
 import importlib
 import torch
+from lightning.pytorch.loggers.logger import DummyLogger
+import matplotlib.pyplot as plt
+torch.set_warn_always(False)
+plt.rcParams.update({'axes.formatter.limits': (-3, 3)})
 
 class LightningBase(L.LightningModule):
 
@@ -11,6 +15,10 @@ class LightningBase(L.LightningModule):
         super().__init__()
         self.ignored_checkpoint_keys = []
 
+    def on_fit_start(self):
+        if isinstance(self.trainer.logger, DummyLogger):
+            self.trainer.logger.experiment.dir = "debug_logs"
+        super().on_fit_start()
 
     @staticmethod
     def disabled_train_func(self, mode=True):

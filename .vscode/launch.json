@@ -24,6 +24,43 @@
             ]
         },
         {
+            "name": "Finetune with Model",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "1",
+                "PYTHONPATH": "${workspaceFolder}",
+            },
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "fit",
+                "--config", "configs/finetune_with_model.yaml",
+                "--config", "configs/debug.yaml",
+                "--model.init_args.training_batch_size", "16",
+            ]
+        },
+        {
+            "name": "LLaVA Server",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "3",
+                "PYTHONPATH": "${workspaceFolder}",
+            },
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "utils.llava_server:app",
+                "--timeout-keep-alive", "600",
+                "--log-level", "debug",
+            ]
+        },
+        {
             "name": "Current File",
             "type": "debugpy",
             "request": "launch",
@@ -31,7 +68,7 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "env": {
-                "CUDA_VISIBLE_DEVICES": "0",
+                "CUDA_VISIBLE_DEVICES": "1",
                 "PYTHONPATH": "${workspaceFolder}",
             },
             "cwd": "${workspaceFolder}"
