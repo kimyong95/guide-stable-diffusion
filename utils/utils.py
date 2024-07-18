@@ -1,6 +1,11 @@
 import inspect
 import torch
 
+def disabled_train_func(self, mode=True):
+    """Overwrite model.train with this function to make sure train/eval mode
+    does not change anymore."""
+    return self
+
 class FunctionCallTracker:
     def __init__(self, func):
         self.func = func
