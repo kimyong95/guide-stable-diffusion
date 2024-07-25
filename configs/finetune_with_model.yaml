@@ -26,6 +26,8 @@ model:
   init_args:
     num_sampling_steps: 50
     training_batch_size: 32
-    lr: 50.0
-    prompt: "a white puppy with golden wings"
+    lr: 100.0
+    generate_prompt: "a white puppy with golden wings"
+    reward_query_prompt: "Describe this photo concisely."
+    reward_target_prompt: "a photo of a white puppy with gold wings spread out on its back"
     reward_func: "llava_web"

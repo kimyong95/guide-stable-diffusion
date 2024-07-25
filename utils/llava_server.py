@@ -26,12 +26,13 @@ class Response(BaseModel):
 @app.post("/reward")
 async def llava_reward(
     files: List[UploadFile] = File(...),
-    prompt: str = Form(...)
+    target_prompt: str = Form(...),
+    query_prompt: str = Form(...)
 ):
 
     images = [ Image.open(file.file) for file in files ]
     
-    recalls, outputs = llava(images, prompt)
+    recalls, outputs = llava(images, target_prompt, query_prompt)
 
     response = Response(recalls=recalls.tolist(), texts=outputs)
     

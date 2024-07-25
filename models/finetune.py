@@ -17,8 +17,8 @@ from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDP
 
 class FinetuneDiffusion(DiffusionBase):
 
-    def __init__(self, prompt, num_sampling_steps, training_batch_size, lr, reward_func):
-        super().__init__(prompt)
+    def __init__(self, generate_prompt, reward_query_prompt, reward_target_prompt, num_sampling_steps, training_batch_size, lr, reward_func):
+        super().__init__(generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
 
         self.num_sampling_steps = num_sampling_steps
         self.training_batch_size = training_batch_size
@@ -54,15 +54,15 @@ class FinetuneDiffusion(DiffusionBase):
 
         init_latents = noise[0]
 
-        out = self.pipe(
-            self.prompt,
+        images = self.pipe(
+            self.generate_prompt,
             num_images_per_prompt=batch_size,
             latents=init_latents.type(torch.float16),
             given_noise=noise[1:].type(torch.float16)
         ).images
 
         self.log_images(images)
-        scores = self.get_scores(images)
+        scores, texts = self.get_scores(images)
 
         self.update_parameters(self._x_flatten(noise), scores)
 

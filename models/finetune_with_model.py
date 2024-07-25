@@ -12,11 +12,13 @@ import PIL
 import matplotlib.pyplot as plt
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 from models.diffusion_base import DiffusionBase
+from botorch.fit import fit_gpytorch_mll
 
 from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDPMSolverMultistepScheduler
 from utils.utils import FunctionCallTracker
 from diffusers import UNet2DModel
 import gpytorch
+from bert_score import BERTScorer
 from models.diffusion_base import find_closest_factors
 from palettable.colorbrewer.qualitative import Dark2_4
 colors = Dark2_4.mpl_colors
@@ -25,17 +27,20 @@ class ExactGPModel(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, likelihood):
         super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
-    
+        self.rbf_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+
     def forward(self, x):
         mean_x = self.mean_module(x)
-        covar_x = self.covar_module(x)
+        rbf_x = self.rbf_module(x)
+
+        covar_x = rbf_x
+        
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 class FinetuneDiffusionWithModel(DiffusionBase):
 
-    def __init__(self, prompt, num_sampling_steps, training_batch_size, lr, reward_func):
-        super().__init__(prompt, reward_func)
+    def __init__(self, generate_prompt, reward_query_prompt, reward_target_prompt, num_sampling_steps, training_batch_size, lr, reward_func):
+        super().__init__(generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
 
         self.num_sampling_steps = num_sampling_steps
         self.training_batch_size = training_batch_size
@@ -53,7 +58,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         self.register_buffer("data_y", data_y)
 
         self.model = ExactGPModel(None, None, self.likelihood)
-        self.model.covar_module.base_kernel.lengthscale = (self.channels * self.sample_size * self.sample_size) ** 0.5
+        self.model.rbf_module.base_kernel.lengthscale = 128
         self.model.eval()
 
         # dummy parameters for pytorch lightning optimizer to work
@@ -85,14 +90,15 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         for xj in x_flatten:
 
-
             with torch.enable_grad():
                 xj.requires_grad = True
+
                 yj = self.likelihood(self.model(xj.unsqueeze(0)))
+
                 mean = yj.mean
-                # lcb = yj.mean - 2*(yj.covariance_matrix.item()**0.5)
-                # loss = mean + 0.5 * lcb
-                
+                lcb = yj.mean - 2*(yj.covariance_matrix.item()**0.5)
+                loss = mean + 0.5 * lcb
+
                 grad = torch.autograd.grad(mean, xj, create_graph=True, allow_unused=True)[0]
                 grad_2nd = None if grad is None else \
                     torch.autograd.grad(grad.norm()*grad.shape[0], xj, create_graph=False, allow_unused=True)[0]
@@ -138,13 +144,11 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         
         # ablation
         images_list = []
-        scores_list = []
-        outputs_list = []
         y_pred_list = []
         y_uncertainty_list = []
 
         L = 1 + self.current_epoch
-        for i in range(L):
+        for l in range(L):
 
             prior = mu[0] + epsilon[0]
             given_noise = mu[1:,:] + epsilon[1:]
@@ -153,7 +157,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             callback = lambda i,t,pred_x0: pred_x0_traj.append(pred_x0)
 
             latents = self.pipe(
-                self.prompt,
+                self.generate_prompt,
                 num_images_per_prompt=batch_size,
                 latents=prior.type(torch.float16),
                 output_type="latent",
@@ -163,53 +167,57 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
             pred_x0_traj.append(latents)
 
-            images = self.latents_to_images(latents)
-            scores, _ = self.get_scores(images)
-            images_list.append(images)
-            scores_list.append(scores)
+            pred_x0_traj = torch.stack(pred_x0_traj)
 
-            for t in range(self.num_sampling_steps+1):
-                derivative_y, derivative_y_2nd, y_pred, y_uncertainty = self.derivative_y_wrt_x(pred_x0_traj[t].type(torch.float32))
-                mu[t] -= beta * derivative_y
+            images = self.latents_to_images(latents)
+            images_list.append(images)
+
+            derivative_y, derivative_y_2nd, y_pred, y_uncertainty = self.derivative_y_wrt_x(pred_x0_traj[-1].type(torch.float32))
+
+            mu[:] -= beta * derivative_y
+
+            # for t in range(self.num_sampling_steps+1):
+            #     derivative_y, derivative_y_2nd, y_pred, y_uncertainty = self.derivative_y_wrt_x(pred_x0_traj[t].type(torch.float32) + mu[t])
+            #     mu[t] -= beta * derivative_y
             y_pred_list.append(y_pred)
             y_uncertainty_list.append(y_uncertainty)
 
-        self.log_params(mu.mean(0))
+        self.log_params(mu.mean(dim=[0,1]))
 
         images = self.latents_to_images(latents)
 
         self.log_images(images)
-        scores, outputs = self.get_scores(images)
+        scores, texts = self.get_scores(images)
 
-        self.update_model(self._x_flatten(latents), scores)
+        self.update_model_data(self._x_flatten(latents), scores, texts)
 
         self.log_score(scores, stage="train")
 
-        self.log_ablation(images_list=images_list, scores_list=scores_list, y_pred_list=y_pred_list, y_uncertainty_list=y_uncertainty_list, outputs=outputs)
+        self.log_ablation(images_list=images_list, texts=texts, scores=scores, y_pred_list=y_pred_list, y_uncertainty_list=y_uncertainty_list)
 
-    def log_ablation(self, images_list=None, scores_list=None, y_pred_list=None, y_uncertainty_list=None, outputs=None):
+    def log_ablation(self, images_list=None, scores_list=None, y_pred_list=None, y_uncertainty_list=None, texts=None, scores=None):
         path = str(self.trainer.logger.experiment.dir).removesuffix("/files") + f"/ablation/{self.current_epoch}"
         os.makedirs(path, exist_ok=True)
 
-        ########################## plot ##########################
+        ########################## plot traj metric ##########################
         if scores_list is not None and y_pred_list is not None and y_uncertainty_list is not None:
 
-            scores = torch.stack(scores_list)
+            traj_scores = torch.stack(scores_list)
             y_pred = torch.stack(y_pred_list)
             y_uncertainty = torch.stack(y_uncertainty_list)
 
-            scores = einops.rearrange(scores, 'L B -> B L').cpu().numpy()
+            traj_scores = einops.rearrange(traj_scores, 'L B -> B L').cpu().numpy()
             y_pred = einops.rearrange(y_pred, 'L B -> B L').cpu().numpy()
             y_uncertainty = einops.rearrange(y_uncertainty, 'L B -> B L').cpu().numpy()
             
-            col = find_closest_factors(len(scores))
-            row = len(scores) // col
+            col = find_closest_factors(len(traj_scores))
+            row = len(traj_scores) // col
             fig, axs = plt.subplots(row, col, figsize=(col*10, row*5))
 
             for i, ax in enumerate(axs.flat):
 
                 ax.set_ylabel('scores', color=colors[0])
-                ax.plot(scores[i], color=colors[0])
+                ax.plot(traj_scores[i], color=colors[0])
 
                 ax1 = ax.twinx()
                 ax1.set_ylabel('y_pred', color=colors[1])
@@ -224,33 +232,32 @@ class FinetuneDiffusionWithModel(DiffusionBase):
                 ax2.plot(y_uncertainty[i], color=colors[2])
 
             fig.tight_layout()
-            fig.savefig(f"{path}/scores.png")
+            fig.savefig(f"{path}/traj_metric.png")
 
             # save tensors dict
             torch.save({
-                "scores": scores,
+                "traj_scores": scores_list,
                 "y_pred": y_pred,
                 "y_uncertainty": y_uncertainty,
             }, f"{path}/tensors.pt")
 
-        ########################## plot ##########################
+        ########################## plot traj metric ##########################
 
-        ############################ save images ############################
+        ############################ save traj images ############################
         if images_list is not None:
             for l, images in enumerate(images_list):
                 images_tensors = torch.stack([torchvision.transforms.ToTensor()(image) for image in images])
                 grid_image = torchvision.utils.make_grid(images_tensors, nrow=find_closest_factors(len(images_tensors)))
                 torchvision.utils.save_image(grid_image, f"{path}/l={l}.jpg", format='jpeg')
-        ############################ save images ############################
+        ############################ save traj images ############################
 
-        ############################ save outputs ############################
-        if outputs is not None and scores_list is not None:
-            final_scores = scores_list[-1]
+        ############################ save final text ############################
+        if texts is not None and scores is not None:
             with open(f"{path}/llava.txt", "w") as f:
-                for i, output in enumerate(outputs):
-                    output = output.replace('\n', '').strip()
-                    f.write(f"Score: {final_scores[i].item():3f}, LLaVA: {output}\n")
-        ############################ save outputs ############################
+                for score, text in zip(scores, texts):
+                    text = text.replace('\n', '').strip()
+                    f.write(f"Score: {score.item():3f}, LLaVA: {text}\n")
+        ############################ save final text ############################
 
 
     def log_params(self, mu):
@@ -265,20 +272,22 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         return
 
-
     def configure_optimizers(self):
         return torch.optim.Adam([self.dummy], lr=0.)
     
     # minimize score
-    @torch.enable_grad()
-    def update_model(self, x, scores):
+    # @torch.inference_mode()
+    def update_model_data(self, x, scores, texts):
         ''' minimize score '''
 
         self.data_x = torch.cat([self.data_x, x])
         self.data_y = torch.cat([self.data_y, scores])
 
+        # normalized_data_y = (self.data_y - self.data_y.mean()) / self.data_y.std()
+
         self.model.set_train_data(
             inputs=self.data_x, 
-            targets=self.data_y, 
+            targets=self.data_y,
             strict=False,
         )
+

@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 
 from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDPMSolverMultistepScheduler
-from utils.rewards import ClipSimilarity, LLaVA, LLaVA_Web
+from utils.rewards import LLaVA, LLaVA_Web
 
 def find_closest_factors(n):
     # Start from the square root of n and move downwards to find the closest factors
@@ -23,14 +23,13 @@ def find_closest_factors(n):
             return i
 
 REWAED_FUNC = {
-    "clip_sim": ClipSimilarity,
     "llava": LLaVA,
     "llava_web": LLaVA_Web,
 }
 
 class DiffusionBase(LightningBase):
 
-    def __init__(self, prompt, reward_func):
+    def __init__(self, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
 
         super().__init__()
 
@@ -53,7 +52,9 @@ class DiffusionBase(LightningBase):
         self.sample_size = self.pipe.unet.config.sample_size
         self.channels = self.pipe.unet.config.in_channels
         
-        self.prompt = prompt
+        self.generate_prompt = generate_prompt
+        self.reward_query_prompt = reward_query_prompt
+        self.reward_target_prompt = reward_target_prompt
 
         assert reward_func in REWAED_FUNC
         self.reward_func = REWAED_FUNC[reward_func]()
@@ -74,7 +75,7 @@ class DiffusionBase(LightningBase):
     # input: PIL images
     def get_scores(self, images):
 
-        total_scores, outputs = self.reward_func(images, self.prompt)
+        total_scores, outputs = self.reward_func(images, self.reward_target_prompt, self.reward_query_prompt)
         total_scores = - total_scores
 
         return total_scores, outputs
