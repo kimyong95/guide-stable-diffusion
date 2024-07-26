@@ -1,5 +1,18 @@
 import inspect
 import torch
+import math
+
+def find_closest_factors(n):
+    # Start from the square root of n and move downwards to find the closest factors
+    for i in range(int(math.sqrt(n)), n):
+        if n % i == 0:
+            return i
+
+def disable_train(model: torch.nn.Module):
+    model.eval()
+    model.train = disabled_train_func
+    model.requires_grad_(False)
+    return model
 
 def disabled_train_func(self, mode=True):
     """Overwrite model.train with this function to make sure train/eval mode

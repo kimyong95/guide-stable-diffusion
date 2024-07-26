@@ -4,7 +4,7 @@ channels:
   - pytorch
   - nvidia
 dependencies:
-  - python=3.9
+  - python=3.10
   - ipykernel=6
   - jupyter_core=5.7
   - matplotlib=3.8
@@ -17,6 +17,7 @@ dependencies:
   - torchvision=0.17
   - torchaudio=2.2
   - lightning=2.2
+  - botorch=0.11
   - wandb=0.16
   - diffusers=0.21
   - accelerate=0.30
@@ -25,10 +26,7 @@ dependencies:
   - open-clip-torch=2.24.0
   - cma=3.3
   - scikit-learn=1.4.2
-  - gpytorch::gpytorch=1.10
+  - gpytorch::gpytorch=1.11
   - ipywidgets=8.1
   - pip:
     - jsonargparse[signatures]==4.27.7
-    - image-reward==1.5
-    - git+https://github.com/haotian-liu/LLaVA.git
-    - bert-score==0.3.13

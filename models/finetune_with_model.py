@@ -18,7 +18,6 @@ from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDP
 from utils.utils import FunctionCallTracker
 from diffusers import UNet2DModel
 import gpytorch
-from bert_score import BERTScorer
 from models.diffusion_base import find_closest_factors
 from palettable.colorbrewer.qualitative import Dark2_4
 colors = Dark2_4.mpl_colors
@@ -282,8 +281,6 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         self.data_x = torch.cat([self.data_x, x])
         self.data_y = torch.cat([self.data_y, scores])
-
-        # normalized_data_y = (self.data_y - self.data_y.mean()) / self.data_y.std()
 
         self.model.set_train_data(
             inputs=self.data_x, 

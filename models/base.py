@@ -6,6 +6,7 @@ import importlib
 import torch
 from lightning.pytorch.loggers.logger import DummyLogger
 import matplotlib.pyplot as plt
+from utils.utils import disable_train
 torch.set_warn_always(False)
 plt.rcParams.update({'axes.formatter.limits': (-3, 3)})
 
@@ -19,12 +20,6 @@ class LightningBase(L.LightningModule):
         if isinstance(self.trainer.logger, DummyLogger):
             self.trainer.logger.experiment.dir = "debug_logs"
         super().on_fit_start()
-
-    @staticmethod
-    def disabled_train_func(self, mode=True):
-        """Overwrite model.train with this function to make sure train/eval mode
-        does not change anymore."""
-        return self
 
     @staticmethod
     def load_from_run_path(run_path, checkpoint="last", training=False):
@@ -43,9 +38,7 @@ class LightningBase(L.LightningModule):
         model.load_state_dict(torch.load(checkpoint_path)["state_dict"])
         
         if not training:
-            model.eval()
-            model.train = LightningBase.disabled_train_func
-            model.requires_grad_(False)
+            model = disable_train(model)
         
         return model
 

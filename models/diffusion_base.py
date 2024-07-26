@@ -14,17 +14,11 @@ import matplotlib.pyplot as plt
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 
 from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDPMSolverMultistepScheduler
-from utils.rewards import LLaVA, LLaVA_Web
-
-def find_closest_factors(n):
-    # Start from the square root of n and move downwards to find the closest factors
-    for i in range(int(math.sqrt(n)), n):
-        if n % i == 0:
-            return i
+from utils.rewards import LLaVA
+from utils.utils import find_closest_factors, disable_train
 
 REWAED_FUNC = {
     "llava": LLaVA,
-    "llava_web": LLaVA_Web,
 }
 
 class DiffusionBase(LightningBase):
@@ -37,17 +31,9 @@ class DiffusionBase(LightningBase):
         self.scheduler = FinetuneDPMSolverMultistepScheduler.from_pretrained(model_id, subfolder="scheduler", algorithm_type="sde-dpmsolver++")
         self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=self.scheduler, torch_dtype=torch.float16)
         
-        self.pipe.unet.eval()
-        self.pipe.unet.train = LightningBase.disabled_train_func
-        self.pipe.unet.requires_grad_(False)
-
-        self.pipe.text_encoder.eval()
-        self.pipe.text_encoder.train = LightningBase.disabled_train_func
-        self.pipe.text_encoder.requires_grad_(False)
-
-        self.pipe.vae.eval()
-        self.pipe.vae.train = LightningBase.disabled_train_func
-        self.pipe.vae.requires_grad_(False)
+        self.pipe.unet = disable_train(self.pipe.unet)
+        self.pipe.text_encoder = disable_train(self.pipe.text_encoder)
+        self.pipe.vae = disable_train(self.pipe.vae)
 
         self.sample_size = self.pipe.unet.config.sample_size
         self.channels = self.pipe.unet.config.in_channels

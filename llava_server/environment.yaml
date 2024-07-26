@@ -1,0 +1,19 @@
+name: llava-server
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+dependencies:
+  - python=3.10
+  - ipykernel=6
+  - jupyter_core=5.7
+  - pytorch-cuda=12.1
+  - pytorch=2.2
+  - torchvision=0.17
+  - fastapi=0.111
+  - uvicorn=0.30.3
+  - protobuf
+  - pip:
+    - jsonargparse[signatures]==4.27.7
+    - git+https://github.com/haotian-liu/LLaVA.git
+    - bert-score==0.3.13

@@ -1,14 +1,15 @@
 # Execute:
-# CUDA_VISIBLE_DEVICES=0 uvicorn utils.llava_server:app --timeout-keep-alive 600 --log-level debug
+# CUDA_VISIBLE_DEVICES=0 uvicorn llava_server.api:app --timeout-keep-alive 600 --log-level debug
 
 from typing import List
 from fastapi import FastAPI, UploadFile, File, Body, Form
 from PIL import Image
-from utils.rewards import LLaVA
+from llava_server.core import LLaVA
 
 import torch
 import einops
 from pydantic import BaseModel
+import uvicorn
 
 model_path="liuhaotian/llava-v1.5-7b"
 assert torch.cuda.is_available()
