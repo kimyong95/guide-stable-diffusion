@@ -15,7 +15,7 @@ from models.diffusion_base import DiffusionBase
 from botorch.fit import fit_gpytorch_mll
 
 from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDPMSolverMultistepScheduler
-from utils.utils import FunctionCallTracker
+from utils.utils import FunctionCallTracker, disable_train
 from diffusers import UNet2DModel
 import gpytorch
 from models.diffusion_base import find_closest_factors
@@ -56,9 +56,10 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         self.register_buffer("data_x", data_x)
         self.register_buffer("data_y", data_y)
 
-        self.model = ExactGPModel(None, None, self.likelihood)
-        self.model.rbf_module.base_kernel.lengthscale = 128
-        self.model.eval()
+        model = ExactGPModel(None, None, self.likelihood)
+        model.rbf_module.base_kernel.lengthscale = 128
+        self.model = disable_train(model)
+
 
         # dummy parameters for pytorch lightning optimizer to work
         self.dummy = torch.nn.Parameter(torch.zeros(1))
@@ -80,12 +81,12 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
     def derivative_y_wrt_x(self, x):
 
+        if len(self.data_y) == 0:
+            return torch.zeros_like(x)
+
         x_flatten = self._x_flatten(x)
 
-        y_pred = []
-        y_uncertainty = []
-        y_pred_grad = []
-        y_pred_grad_2nd = []
+        y_grad = []
 
         for xj in x_flatten:
 
@@ -99,29 +100,16 @@ class FinetuneDiffusionWithModel(DiffusionBase):
                 loss = mean + 0.5 * lcb
 
                 grad = torch.autograd.grad(mean, xj, create_graph=True, allow_unused=True)[0]
-                grad_2nd = None if grad is None else \
-                    torch.autograd.grad(grad.norm()*grad.shape[0], xj, create_graph=False, allow_unused=True)[0]
-                
+
                 xj.requires_grad = False
-                self.model.zero_grad()
 
-            grad = torch.zeros_like(xj) if grad is None else grad
-            grad_2nd = torch.zeros_like(xj) if grad_2nd is None else grad_2nd
-            
-            y_pred.append(mean[0])
-            y_uncertainty.append(yj.covariance_matrix[0,0])
-            y_pred_grad.append(grad)
-            y_pred_grad_2nd.append(grad_2nd)
-        
-        y_pred = torch.stack(y_pred).detach()
-        y_uncertainty = torch.stack(y_uncertainty).detach()
-        y_pred_grad = torch.stack(y_pred_grad).detach()
-        y_pred_grad_2nd = torch.stack(y_pred_grad_2nd).detach()
+            y_grad.append(grad)
 
-        y_pred_grad = self._x_unflatten(y_pred_grad)
-        y_pred_grad_2nd = self._x_unflatten(y_pred_grad_2nd)
+        y_grad = torch.stack(y_grad).detach()
 
-        return y_pred_grad, y_pred_grad_2nd, y_pred, y_uncertainty
+        y_grad = self._x_unflatten(y_grad)
+
+        return y_grad
 
     def _x_flatten(self, x):
         return einops.rearrange(x, '... C W H -> ... (C W H)', C=self.channels, W=self.sample_size, H=self.sample_size)
@@ -134,7 +122,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         batch_size = self.training_batch_size
 
-        mu = torch.zeros([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device)
+        mu = torch.zeros([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device)
 
         beta = self.lr
         epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32)
@@ -143,17 +131,12 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         
         # ablation
         images_list = []
-        y_pred_list = []
-        y_uncertainty_list = []
 
         L = 1 + self.current_epoch
         for l in range(L):
 
-            prior = mu[0] + epsilon[0]
-            given_noise = mu[1:,:] + epsilon[1:]
-
-            pred_x0_traj = []
-            callback = lambda i,t,pred_x0: pred_x0_traj.append(pred_x0)
+            prior = mu + epsilon[0]
+            given_noise = mu + epsilon[1:]
 
             latents = self.pipe(
                 self.generate_prompt,
@@ -161,25 +144,13 @@ class FinetuneDiffusionWithModel(DiffusionBase):
                 latents=prior.type(torch.float16),
                 output_type="latent",
                 given_noise=given_noise,
-                callback=callback,
             ).images
-
-            pred_x0_traj.append(latents)
-
-            pred_x0_traj = torch.stack(pred_x0_traj)
 
             images = self.latents_to_images(latents)
             images_list.append(images)
 
-            derivative_y, derivative_y_2nd, y_pred, y_uncertainty = self.derivative_y_wrt_x(pred_x0_traj[-1].type(torch.float32))
-
-            mu[:] -= beta * derivative_y
-
-            # for t in range(self.num_sampling_steps+1):
-            #     derivative_y, derivative_y_2nd, y_pred, y_uncertainty = self.derivative_y_wrt_x(pred_x0_traj[t].type(torch.float32) + mu[t])
-            #     mu[t] -= beta * derivative_y
-            y_pred_list.append(y_pred)
-            y_uncertainty_list.append(y_uncertainty)
+            derivative_y = self.derivative_y_wrt_x(latents.type(torch.float32))
+            mu -= beta * derivative_y
 
         self.log_params(mu.mean(dim=[0,1]))
 
@@ -192,7 +163,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         self.log_score(scores, stage="train")
 
-        self.log_ablation(images_list=images_list, texts=texts, scores=scores, y_pred_list=y_pred_list, y_uncertainty_list=y_uncertainty_list)
+        self.log_ablation(images_list=images_list, texts=texts, scores=scores)
 
     def log_ablation(self, images_list=None, scores_list=None, y_pred_list=None, y_uncertainty_list=None, texts=None, scores=None):
         path = str(self.trainer.logger.experiment.dir).removesuffix("/files") + f"/ablation/{self.current_epoch}"
