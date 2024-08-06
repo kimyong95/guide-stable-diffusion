@@ -38,10 +38,10 @@ class ExactGPModel(gpytorch.models.ExactGP):
 
 class FinetuneDiffusionWithModel(DiffusionBase):
 
-    def __init__(self, generate_prompt, reward_query_prompt, reward_target_prompt, num_sampling_steps, training_batch_size, lr, reward_func):
-        super().__init__(generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
+    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, num_sampling_steps, training_batch_size, lr, reward_func):
+        super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
 
-        self.num_sampling_steps = num_sampling_steps
+        # self.num_sampling_steps = num_sampling_steps
         self.training_batch_size = training_batch_size
 
         self.lr = lr
@@ -57,9 +57,8 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         self.register_buffer("data_y", data_y)
 
         model = ExactGPModel(None, None, self.likelihood)
-        model.rbf_module.base_kernel.lengthscale = 128
+        model.rbf_module.base_kernel.lengthscale = (self.channels * self.sample_size * self.sample_size) ** 0.5
         self.model = disable_train(model)
-
 
         # dummy parameters for pytorch lightning optimizer to work
         self.dummy = torch.nn.Parameter(torch.zeros(1))
@@ -67,8 +66,6 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
     def on_fit_start(self):
         super().on_fit_start()
-        self.data_x = self.data_x.to(self.device)
-        self.data_y = self.data_y.to(self.device)
 
     @staticmethod
     def get_noise(self, x, mu):
@@ -139,27 +136,30 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             given_noise = mu + epsilon[1:]
 
             latents = self.pipe(
-                self.generate_prompt,
-                num_images_per_prompt=batch_size,
+                [self.generate_prompt]*batch_size,
                 latents=prior.type(torch.float16),
                 output_type="latent",
                 given_noise=given_noise,
+                num_inference_steps=self.num_sampling_steps,
+                guidance_scale=self.guidance_scale,
             ).images
-
+            
             images = self.latents_to_images(latents)
             images_list.append(images)
 
             derivative_y = self.derivative_y_wrt_x(latents.type(torch.float32))
+
             mu -= beta * derivative_y
 
         self.log_params(mu.mean(dim=[0,1]))
 
-        images = self.latents_to_images(latents)
+        # images = self.latents_to_images(latents)
 
         self.log_images(images)
         scores, texts = self.get_scores(images)
 
-        self.update_model_data(self._x_flatten(latents), scores, texts)
+
+        self.update_model_data(self._x_flatten(latents).type(torch.float32), scores)
 
         self.log_score(scores, stage="train")
 
@@ -247,7 +247,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
     
     # minimize score
     # @torch.inference_mode()
-    def update_model_data(self, x, scores, texts):
+    def update_model_data(self, x, scores):
         ''' minimize score '''
 
         self.data_x = torch.cat([self.data_x, x])

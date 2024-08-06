@@ -12,25 +12,57 @@ import lightning
 import PIL
 import matplotlib.pyplot as plt
 from torchmetrics.image import StructuralSimilarityIndexMeasure
+from diffusers import StableDiffusionXLPipeline, AutoencoderKL, UNet2DConditionModel
+from huggingface_hub import hf_hub_download
+from safetensors.torch import load_file
 
-from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDPMSolverMultistepScheduler
-from utils.rewards import LLaVA
+from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDPMSolverMultistepScheduler, FinetuneStableDiffusion3Pipeline, FinetuneFlowMatchEulerDiscreteScheduler
+from utils.finetune_difussers import FinetuneEulerDiscreteScheduler, FinetuneStableDiffusionXLPipeline
+from utils.rewards import LLaVA, Gpt
 from utils.utils import find_closest_factors, disable_train
+
+from onediff.infer_compiler import oneflow_compile
+from DeepCache import DeepCacheSDHelper
 
 REWAED_FUNC = {
     "llava": LLaVA,
+    "gpt": Gpt,
 }
 
 class DiffusionBase(LightningBase):
 
-    def __init__(self, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
+    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
 
         super().__init__()
+        self.sd_model = sd_model
+        if sd_model == "sd2":
+            self.num_sampling_steps = 50
+            self.guidance_scale = 7.0
+            model_id = "stabilityai/stable-diffusion-2-1-base"
+            scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+            self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            self.pipe.enable_vae_slicing()
+        elif sd_model == "sdxl":
+            self.num_sampling_steps = 30
+            self.guidance_scale = 7.0
+            model_id = "stabilityai/stable-diffusion-xl-base-1.0"
+            vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
+            scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+            self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            self.pipe.enable_vae_slicing()
+            self.pipe.vae.encoder = None
+        elif sd_model == "sdxl-lightning":
+            self.num_sampling_steps = 8
+            self.guidance_scale = 0.0
+            model_id = "stabilityai/stable-diffusion-xl-base-1.0"
+            unet = UNet2DConditionModel.from_pretrained(model_id, subfolder="unet", torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            unet.load_state_dict(load_file(hf_hub_download("ByteDance/SDXL-Lightning", "sdxl_lightning_8step_unet.safetensors")))
+            vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
+            scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler", timestep_spacing="trailing")
+            self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, unet=unet, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            self.pipe.enable_vae_slicing()
+            self.pipe.vae.encoder = None
 
-        model_id = "stabilityai/stable-diffusion-2-1-base"
-        self.scheduler = FinetuneDPMSolverMultistepScheduler.from_pretrained(model_id, subfolder="scheduler", algorithm_type="sde-dpmsolver++")
-        self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=self.scheduler, torch_dtype=torch.float16)
-        
         self.pipe.unet = disable_train(self.pipe.unet)
         self.pipe.text_encoder = disable_train(self.pipe.text_encoder)
         self.pipe.vae = disable_train(self.pipe.vae)
@@ -49,10 +81,21 @@ class DiffusionBase(LightningBase):
         super().on_fit_start()
         self.pipe = self.pipe.to(self.device)
         self.reward_func = self.reward_func.to(self.device)
+
+        self.pipe.unet = oneflow_compile(self.pipe.unet)
+        cache_path = f"onediff_cache/{self.sd_model}"
+        try:
+            self.pipe.unet.load_graph(cache_path, device=str(self.device))
+        except ValueError:
+            self.pipe(prompt=[""], num_inference_steps=self.num_sampling_steps).images
+            self.pipe.unet.save_graph(cache_path)
+
         return self
 
     def latents_to_images(self, latents):
-        images = self.pipe.vae.decode(latents / self.pipe.vae.config.scaling_factor, return_dict=False)[0]
+
+        latents = (latents / self.pipe.vae.config.scaling_factor)
+        images = self.pipe.vae.decode(latents, return_dict=False)[0]
         images = self.pipe.image_processor.postprocess(images)
         return images
 
