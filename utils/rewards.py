@@ -42,7 +42,7 @@ class LLaVA(RewardBase):
         return recalls, texts
 class Gpt(RewardBase):
     def __init__(self):
-        self.client = OpenAI(api_key="sk-proj-KYh7prhCAul7nm8BQ0m6T3BlbkFJbzQOpJrTALeqTr3uLwkT")
+        self.client = OpenAI()
         self.target_embedding_cache = {}
         self.cos_sim = torch.nn.CosineSimilarity(dim=1, eps=1e-6)
 
@@ -99,7 +99,6 @@ class Gpt(RewardBase):
     
 class Gemini(RewardBase):
     def __init__(self):
-        genai.configure(api_key="AIzaSyBgu8Xw3jS6bskRAe3j9wz0g4vmF0rUjEw")
         self.target_embedding_cache = {}
         self.model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
@@ -152,7 +151,6 @@ class Gemini(RewardBase):
     
 class GeminiQuestion(RewardBase):
     def __init__(self):
-        genai.configure(api_key="xxx")
         self.target_embedding_cache = {}
         self.model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
