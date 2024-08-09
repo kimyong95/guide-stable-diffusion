@@ -18,15 +18,17 @@ from safetensors.torch import load_file
 
 from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDPMSolverMultistepScheduler, FinetuneStableDiffusion3Pipeline, FinetuneFlowMatchEulerDiscreteScheduler
 from utils.finetune_difussers import FinetuneEulerDiscreteScheduler, FinetuneStableDiffusionXLPipeline
-from utils.rewards import LLaVA, Gpt
+from utils.rewards import LLaVA, Gpt, Gemini, GeminiQuestion
 from utils.utils import find_closest_factors, disable_train
 
 from onediff.infer_compiler import oneflow_compile
-from DeepCache import DeepCacheSDHelper
+# from DeepCache import DeepCacheSDHelper
 
 REWAED_FUNC = {
     "llava": LLaVA,
     "gpt": Gpt,
+    "gemini": Gemini,
+    "gemini-question": GeminiQuestion
 }
 
 class DiffusionBase(LightningBase):
@@ -43,7 +45,7 @@ class DiffusionBase(LightningBase):
             self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
         elif sd_model == "sdxl":
-            self.num_sampling_steps = 30
+            self.num_sampling_steps = 50
             self.guidance_scale = 7.0
             model_id = "stabilityai/stable-diffusion-xl-base-1.0"
             vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)

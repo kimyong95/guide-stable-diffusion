@@ -5,6 +5,10 @@ import io
 import requests
 from openai import OpenAI
 import base64
+import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
+import asyncio
+import re
 
 class RewardBase:
     def __init__(self):
@@ -83,7 +87,7 @@ class Gpt(RewardBase):
                 messages=[self.get_message(base64_, query_prompt)],
                 max_tokens=100,
             )
-            responses.append(response.choices[0].message.content)
+            responses.append(response.choices[0].message.content.strip())
 
         embeddings = self.client.embeddings.create(input = responses, model="text-embedding-3-small")
         embeddings = [data.embedding for data in embeddings.data]
@@ -92,3 +96,112 @@ class Gpt(RewardBase):
         similarity = self.cos_sim(embeddings, self.get_target_embedding(target_prompt)[None,:]).to(self.device)
 
         return similarity, responses
+    
+class Gemini(RewardBase):
+    def __init__(self):
+        genai.configure(api_key="AIzaSyBgu8Xw3jS6bskRAe3j9wz0g4vmF0rUjEw")
+        self.target_embedding_cache = {}
+        self.model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+
+        self.cos_sim = torch.nn.CosineSimilarity(dim=1, eps=1e-6)
+
+    def get_target_embedding(self, target_prompt):
+        if target_prompt in self.target_embedding_cache:
+            return self.target_embedding_cache[target_prompt]
+        embedding = genai.embed_content(
+            model="models/text-embedding-004",
+            content=target_prompt,
+        )["embedding"]
+
+        embedding = torch.as_tensor(embedding)
+                
+        self.target_embedding_cache[target_prompt] = embedding
+        return embedding
+
+    @staticmethod
+    async def generate_content_async(contents_list):
+        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+        tasks = [model.generate_content_async(contents, safety_settings=safety_settings) for contents in contents_list]
+        responses = await asyncio.gather(*tasks)
+        texts = [r.text.strip() for r in responses]
+        return texts
+
+    def __call__(self, images: Image.Image, target_prompt, query_prompt):
+        
+        contents_list = [[image, query_prompt] for image in images]
+
+        loop = asyncio.get_event_loop()
+        responses = loop.run_until_complete(self.generate_content_async(contents_list))
+
+        embeddings = genai.embed_content(
+            model="models/text-embedding-004",
+            content=responses,
+        )["embedding"]
+
+        embeddings = torch.as_tensor(embeddings)
+
+        similarity = self.cos_sim(embeddings, self.get_target_embedding(target_prompt)[None,:]).to(self.device)
+
+        return similarity, responses
+    
+class GeminiQuestion(RewardBase):
+    def __init__(self):
+        genai.configure(api_key="xxx")
+        self.target_embedding_cache = {}
+        self.model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+
+        self.cos_sim = torch.nn.CosineSimilarity(dim=1, eps=1e-6)
+
+    def get_target_embedding(self, target_prompt):
+        if target_prompt in self.target_embedding_cache:
+            return self.target_embedding_cache[target_prompt]
+        embedding = genai.embed_content(
+            model="models/text-embedding-004",
+            content=target_prompt,
+        )["embedding"]
+
+        embedding = torch.as_tensor(embedding)
+                
+        self.target_embedding_cache[target_prompt] = embedding
+        return embedding
+
+    @staticmethod
+    async def generate_content_async(contents_list):
+        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+        tasks = [model.generate_content_async(contents, safety_settings=safety_settings) for contents in contents_list]
+        responses = await asyncio.gather(*tasks)
+        texts = [r.text.strip() for r in responses]
+        return texts
+
+    def __call__(self, images: Image.Image, target_prompt, query_prompt):
+        
+        question_query = f"""Does the prompt '{target_prompt}' accurately describe the image? Rate from 1 (inaccurate) to 5 (accurate).
+        Answer in the format: Score=(score), Reason=(reason).
+        """
+
+        loop = asyncio.get_event_loop()
+        
+        contents = [[image, question_query] for image in images]
+        responses = loop.run_until_complete(self.generate_content_async(contents))
+        # Eg responses = ["Score=5, Reason=xxx.", ...]
+    
+        scores = []
+        for response in responses:
+            match = re.search(r"Score=(\d+)", response)
+            score = int(match.group(1)) if match else 0
+            scores.append(score)
+        scores = torch.as_tensor(scores, device=self.device) / 5.0
+
+        return scores, responses

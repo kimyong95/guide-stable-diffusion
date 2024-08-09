@@ -3,7 +3,7 @@ seed_everything: 0
 
 trainer:
   log_every_n_steps: 1
-  max_epochs: 1000
+  max_epochs: 50
   logger:
     class_path: WandbLogger
     init_args:
@@ -24,10 +24,27 @@ data:
 model:
   class_path: models.finetune_with_model.FinetuneDiffusionWithModel
   init_args:
-    num_sampling_steps: 50
+    sd_model: sdxl
     training_batch_size: 32
     lr: 100.0
-    generate_prompt: "a white puppy with golden wings"
-    reward_query_prompt: "Describe this photo concisely."
-    reward_target_prompt: "a photo of a white puppy with gold wings spread out on its back"
-    reward_func: "llava_web"
+    # generate_prompt: "A dolphin riding a cool motorcycle on the beach."
+    # reward_target_prompt: "A dolphin riding a cool motorcycle on the beach, the image appears to be natural and realistic."
+    # generate_prompt: "A dog and a bear sharing an ice cream."
+    # reward_target_prompt: "A dog and a bear sharing an ice cream."
+    # generate_prompt: "A white puppy with golden wings."
+    # reward_target_prompt: "A white puppy that has golden wings spread out nicely on its body back."
+    generate_prompt: "A dog riding on a bear."
+    reward_target_prompt: "A dog riding on a bear."
+    # reward_func: "llava"
+    # reward_query_prompt: "Describe this photo concisely."
+    reward_func: "gemini-question"
+    reward_query_prompt: "Describe this image concisely in one scentence."
+
+# base_lr=50
+
+# sd2: alpha=1
+# sdxl: alpha=2
+# gpt/gemini: beta=1
+# llava: beta=2
+
+# lr = base_lr * alpha * beta

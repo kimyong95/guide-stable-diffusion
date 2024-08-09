@@ -33,6 +33,7 @@ dependencies:
   - cudnn=8.9
   - pip:
     - jsonargparse[signatures]==4.27.7
+    - google-generativeai
     - --pre oneflow -f https://github.com/siliconflow/oneflow_releases/releases/expanded_assets/community_cu122
     - --pre onediff
-    - git+https://github.com/siliconflow/onediff.git#subdirectory=onediff_diffusers_extensions
+    # - git+https://github.com/siliconflow/onediff.git#subdirectory=onediff_diffusers_extensions

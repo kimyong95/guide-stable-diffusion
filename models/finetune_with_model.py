@@ -96,13 +96,13 @@ class FinetuneDiffusionWithModel(DiffusionBase):
                 lcb = yj.mean - 2*(yj.covariance_matrix.item()**0.5)
                 loss = mean + 0.5 * lcb
 
-                grad = torch.autograd.grad(mean, xj, create_graph=True, allow_unused=True)[0]
+                grad = torch.autograd.grad(mean, xj, create_graph=False, allow_unused=True)[0]
 
                 xj.requires_grad = False
 
-            y_grad.append(grad)
+            y_grad.append(grad.detach())
 
-        y_grad = torch.stack(y_grad).detach()
+        y_grad = torch.stack(y_grad)
 
         y_grad = self._x_unflatten(y_grad)
 
@@ -226,7 +226,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             with open(f"{path}/llava.txt", "w") as f:
                 for score, text in zip(scores, texts):
                     text = text.replace('\n', '').strip()
-                    f.write(f"Score: {score.item():3f}, LLaVA: {text}\n")
+                    f.write(f"Score: {score.item():3f}, Text: {text}\n")
         ############################ save final text ############################
 
 
