@@ -126,7 +126,8 @@ class Gemini(RewardBase):
             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
-        tasks = [model.generate_content_async(contents, safety_settings=safety_settings) for contents in contents_list]
+        generation_config = genai.types.GenerationConfig(temperature=0.0)
+        tasks = [model.generate_content_async(contents, safety_settings=safety_settings, generation_config=generation_config) for contents in contents_list]
         responses = await asyncio.gather(*tasks)
         texts = [r.text.strip() for r in responses]
         return texts
@@ -178,7 +179,9 @@ class GeminiQuestion(RewardBase):
             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
-        tasks = [model.generate_content_async(contents, safety_settings=safety_settings) for contents in contents_list]
+
+        generation_config = genai.types.GenerationConfig(temperature=0.0)
+        tasks = [model.generate_content_async(contents, safety_settings=safety_settings, generation_config=generation_config) for contents in contents_list]
         responses = await asyncio.gather(*tasks)
         texts = [r.text.strip() for r in responses]
         return texts
