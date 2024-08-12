@@ -9,6 +9,8 @@ import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import asyncio
 import re
+from utils.utils import retry
+from google.api_core.exceptions import InternalServerError
 
 class RewardBase:
     def __init__(self):
@@ -171,6 +173,7 @@ class GeminiQuestion(RewardBase):
         return embedding
 
     @staticmethod
+    @retry(times=3, exceptions=(InternalServerError,))
     async def generate_content_async(contents_list):
         model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         safety_settings = {
