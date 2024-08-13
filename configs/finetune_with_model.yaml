@@ -24,9 +24,10 @@ data:
 model:
   class_path: models.finetune_with_model.FinetuneDiffusionWithModel
   init_args:
-    sd_model: sdxl
+    sd_model: sdxl-lightning
     training_batch_size: 32
     lr: 100.0
+    reg: 0.00
     # generate_prompt: "A dolphin riding a cool motorcycle on the beach."
     # reward_target_prompt: "A dolphin riding a cool motorcycle on the beach, the image appears to be natural and realistic."
     # generate_prompt: "A dog and a bear sharing an ice cream."
@@ -35,6 +36,8 @@ model:
     # reward_target_prompt: "A white puppy that has golden wings spread out nicely on its body back."
     generate_prompt: "A dog riding on a bear."
     reward_target_prompt: "A dog riding on a bear."
+    # generate_prompt: "A transparent glass vase filled with a mixture of water and sand, with a single floating feather inside."
+    # reward_target_prompt: "A transparent glass vase filled with a mixture of water and sand, with a single floating feather inside."
     # reward_func: "llava"
     # reward_query_prompt: "Describe this photo concisely."
     reward_func: "gemini-question"

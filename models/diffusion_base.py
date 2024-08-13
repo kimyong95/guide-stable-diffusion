@@ -7,6 +7,7 @@ import math
 from models.base import LightningBase
 import lightning as L
 from tqdm import tqdm
+from lightning.pytorch.loggers.logger import DummyLogger
 import torchvision
 import lightning
 import PIL
@@ -16,7 +17,7 @@ from diffusers import StableDiffusionXLPipeline, AutoencoderKL, UNet2DConditionM
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
 
-from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDPMSolverMultistepScheduler, FinetuneStableDiffusion3Pipeline, FinetuneFlowMatchEulerDiscreteScheduler
+from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneStableDiffusion3Pipeline, FinetuneFlowMatchEulerDiscreteScheduler
 from utils.finetune_difussers import FinetuneEulerDiscreteScheduler, FinetuneStableDiffusionXLPipeline
 from utils.rewards import LLaVA, Gpt, Gemini, GeminiQuestion
 from utils.utils import find_closest_factors, disable_train
@@ -84,6 +85,13 @@ class DiffusionBase(LightningBase):
         self.pipe = self.pipe.to(self.device)
         self.reward_func = self.reward_func.to(self.device)
 
+        # if not debug mode
+        if not isinstance(self.trainer.logger, DummyLogger):
+            self.compile()
+
+        return self
+
+    def compile(self):
         self.pipe.unet = oneflow_compile(self.pipe.unet)
         cache_path = f"onediff_cache/{self.sd_model}"
         try:
@@ -91,8 +99,6 @@ class DiffusionBase(LightningBase):
         except ValueError:
             self.pipe(prompt=[""], num_inference_steps=self.num_sampling_steps).images
             self.pipe.unet.save_graph(cache_path)
-
-        return self
 
     def latents_to_images(self, latents):
 

@@ -14,7 +14,6 @@ from torchmetrics.image import StructuralSimilarityIndexMeasure
 from models.diffusion_base import DiffusionBase
 from botorch.fit import fit_gpytorch_mll
 
-from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDPMSolverMultistepScheduler
 from utils.utils import FunctionCallTracker, disable_train
 from diffusers import UNet2DModel
 import gpytorch
@@ -38,13 +37,14 @@ class ExactGPModel(gpytorch.models.ExactGP):
 
 class FinetuneDiffusionWithModel(DiffusionBase):
 
-    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, num_sampling_steps, training_batch_size, lr, reward_func):
+    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, num_sampling_steps, training_batch_size, lr, reg, reward_func):
         super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
 
         # self.num_sampling_steps = num_sampling_steps
         self.training_batch_size = training_batch_size
 
         self.lr = lr
+        self.reg = reg
 
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
         self.likelihood.noise = 1e-4
@@ -79,10 +79,11 @@ class FinetuneDiffusionWithModel(DiffusionBase):
     def derivative_y_wrt_x(self, x):
 
         if len(self.data_y) == 0:
-            return torch.zeros_like(x)
+            return torch.zeros(x.shape[0], device=self.device), torch.zeros_like(x)
 
         x_flatten = self._x_flatten(x)
 
+        y_pred = []
         y_grad = []
 
         for xj in x_flatten:
@@ -100,13 +101,15 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
                 xj.requires_grad = False
 
+            y_pred.append(mean.detach())
             y_grad.append(grad.detach())
 
+        y_pred = torch.stack(y_pred)
         y_grad = torch.stack(y_grad)
 
         y_grad = self._x_unflatten(y_grad)
 
-        return y_grad
+        return y_pred, y_grad
 
     def _x_flatten(self, x):
         return einops.rearrange(x, '... C W H -> ... (C W H)', C=self.channels, W=self.sample_size, H=self.sample_size)
@@ -130,10 +133,17 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         images_list = []
 
         L = 1 + self.current_epoch
+        latents_traj = torch.zeros_like(epsilon)
         for l in range(L):
 
-            prior = mu + epsilon[0]
-            given_noise = mu + epsilon[1:]
+            shift = mu[None,:] + 2e-2 * (latents_traj[-1,None] - latents_traj)
+
+            prior = mu + shift[0]
+            given_noise = mu + shift[1:]
+
+            latents_traj[0] = prior
+            def collect_latents_traj(i,t,_latents):
+                latents_traj[i+1] = _latents
 
             latents = self.pipe(
                 [self.generate_prompt]*batch_size,
@@ -142,22 +152,22 @@ class FinetuneDiffusionWithModel(DiffusionBase):
                 given_noise=given_noise,
                 num_inference_steps=self.num_sampling_steps,
                 guidance_scale=self.guidance_scale,
+                callback=collect_latents_traj,
+                callback_steps=1,
             ).images
             
             images = self.latents_to_images(latents)
             images_list.append(images)
 
-            derivative_y = self.derivative_y_wrt_x(latents.type(torch.float32))
+            pred_y, derivative_y = self.derivative_y_wrt_x(latents.type(torch.float32))
 
-            mu -= beta * derivative_y
+            # regularize
+            mu -= beta * derivative_y + self.reg * mu
 
         self.log_params(mu.mean(dim=[0,1]))
 
-        # images = self.latents_to_images(latents)
-
         self.log_images(images)
         scores, texts = self.get_scores(images)
-
 
         self.update_model_data(self._x_flatten(latents).type(torch.float32), scores)
 
