@@ -138,8 +138,8 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
             shift = mu[None,:] + 2e-2 * (latents_traj[-1,None] - latents_traj)
 
-            prior = mu + shift[0]
-            given_noise = mu + shift[1:]
+            prior = shift[0] + epsilon[0]
+            given_noise = shift[1:] + epsilon[1:]
 
             latents_traj[0] = prior
             def collect_latents_traj(i,t,_latents):
