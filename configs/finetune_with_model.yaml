@@ -26,8 +26,8 @@ model:
   init_args:
     sd_model: sdxl-lightning
     training_batch_size: 32
-    lr: 100.0
-    reg: 0.00
+    alpha: 0 # GP step
+    beta: 1e-2 # x_K step
     # generate_prompt: "A dolphin riding a cool motorcycle on the beach."
     # reward_target_prompt: "A dolphin riding a cool motorcycle on the beach, the image appears to be natural and realistic."
     # generate_prompt: "A dog and a bear sharing an ice cream."

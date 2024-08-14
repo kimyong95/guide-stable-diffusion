@@ -97,7 +97,7 @@ class DiffusionBase(LightningBase):
         try:
             self.pipe.unet.load_graph(cache_path, device=str(self.device))
         except ValueError:
-            self.pipe(prompt=[""], num_inference_steps=self.num_sampling_steps).images
+            self.pipe(prompt=["hello world"], num_inference_steps=self.num_sampling_steps).images
             self.pipe.unet.save_graph(cache_path)
 
     def latents_to_images(self, latents):

@@ -37,14 +37,14 @@ class ExactGPModel(gpytorch.models.ExactGP):
 
 class FinetuneDiffusionWithModel(DiffusionBase):
 
-    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, num_sampling_steps, training_batch_size, lr, reg, reward_func):
+    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, num_sampling_steps, training_batch_size, alpha, beta, reward_func):
         super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
 
         # self.num_sampling_steps = num_sampling_steps
         self.training_batch_size = training_batch_size
 
-        self.lr = lr
-        self.reg = reg
+        self.alpha = alpha
+        self.beta = beta
 
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
         self.likelihood.noise = 1e-4
@@ -122,10 +122,8 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         batch_size = self.training_batch_size
 
-        mu = torch.zeros([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device)
-
-        beta = self.lr
         epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32)
+        epsilon_init = epsilon.clone()
 
         derivative_y = torch.zeros([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32)
         
@@ -136,15 +134,13 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         latents_traj = torch.zeros_like(epsilon)
         for l in range(L):
 
-            shift = mu[None,:] + 2e-2 * (latents_traj[-1,None] - latents_traj)
-
-            prior = shift[0] + epsilon[0]
-            given_noise = shift[1:] + epsilon[1:]
+            prior = epsilon[0]
+            given_noise = epsilon[1:]
 
             latents_traj[0] = prior
             def collect_latents_traj(i,t,_latents):
                 latents_traj[i+1] = _latents
-
+            
             latents = self.pipe(
                 [self.generate_prompt]*batch_size,
                 latents=prior.type(torch.float16),
@@ -155,16 +151,17 @@ class FinetuneDiffusionWithModel(DiffusionBase):
                 callback=collect_latents_traj,
                 callback_steps=1,
             ).images
-            
-            images = self.latents_to_images(latents)
-            images_list.append(images)
+
+            assert torch.all(latents_traj[-1] == latents)
 
             pred_y, derivative_y = self.derivative_y_wrt_x(latents.type(torch.float32))
 
-            # regularize
-            mu -= beta * derivative_y + self.reg * mu
+            epsilon -= self.alpha * derivative_y + self.beta * (latents_traj - latents_traj[-1][None,:])
 
-        self.log_params(mu.mean(dim=[0,1]))
+            images = self.latents_to_images(latents)
+            images_list.append(images)
+
+        self.log_params((epsilon-epsilon_init).mean(dim=[0,1]))
 
         self.log_images(images)
         scores, texts = self.get_scores(images)
@@ -268,4 +265,3 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             targets=self.data_y,
             strict=False,
         )
-
