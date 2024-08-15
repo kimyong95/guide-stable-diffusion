@@ -37,7 +37,7 @@ def find_closest_factors(n):
     for i in range(int(math.sqrt(n)), n):
         if n % i == 0:
             return i
-    return 1
+    return n
 
 def disable_train(model: torch.nn.Module):
     model.eval()
