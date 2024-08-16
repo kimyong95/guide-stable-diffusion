@@ -124,6 +124,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32)
         epsilon_init = epsilon.clone()
+        epsilon_init_norm = self._x_flatten(epsilon_init).norm(dim=-1)[:,:,None,None,None]
 
         derivative_y = torch.zeros([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32)
         
@@ -157,6 +158,8 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             pred_y, derivative_y = self.derivative_y_wrt_x(latents.type(torch.float32))
 
             epsilon -= self.alpha * derivative_y + self.beta * (latents_traj - latents_traj[-1][None,:])
+            epsilon_norm = self._x_flatten(epsilon).norm(dim=-1)[:,:,None,None,None]
+            epsilon = epsilon / epsilon_norm * epsilon_init_norm
 
             images = self.latents_to_images(latents)
             images_list.append(images)
