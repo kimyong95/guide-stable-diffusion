@@ -13,8 +13,6 @@ import matplotlib.pyplot as plt
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 from models.diffusion_base import DiffusionBase
 
-from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneDPMSolverMultistepScheduler
-
 class FinetuneDiffusion(DiffusionBase):
 
     def __init__(self, generate_prompt, reward_query_prompt, reward_target_prompt, num_sampling_steps, training_batch_size, lr, reward_func):

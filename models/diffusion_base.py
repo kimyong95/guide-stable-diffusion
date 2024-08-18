@@ -107,6 +107,12 @@ class DiffusionBase(LightningBase):
         images = self.pipe.image_processor.postprocess(images)
         return images
 
+    def _x_flatten(self, x):
+        return einops.rearrange(x, '... C W H -> ... (C W H)', C=self.channels, W=self.sample_size, H=self.sample_size)
+
+    def _x_unflatten(self, x):
+        return einops.rearrange(x, '... (C W H) -> ... C W H', C=self.channels, W=self.sample_size, H=self.sample_size)
+
     # maximize reward
     # minimize total_scores
     # input: PIL images

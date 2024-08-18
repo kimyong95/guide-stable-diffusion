@@ -21,101 +21,38 @@ from models.diffusion_base import find_closest_factors
 from palettable.colorbrewer.qualitative import Dark2_4
 colors = Dark2_4.mpl_colors
 
-class ExactGPModel(gpytorch.models.ExactGP):
-    def __init__(self, train_x, train_y, likelihood):
-        super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
-        self.mean_module = gpytorch.means.ConstantMean()
-        self.rbf_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
-
-    def forward(self, x):
-        mean_x = self.mean_module(x)
-        rbf_x = self.rbf_module(x)
-
-        covar_x = rbf_x
-        
-        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class FinetuneDiffusionWithModel(DiffusionBase):
 
-    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, num_sampling_steps, training_batch_size, alpha, beta, reward_func):
+    def __init__(self, guidance_model, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, training_batch_size, validation_batch_size, alpha, beta, reward_func):
         super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
 
-        # self.num_sampling_steps = num_sampling_steps
         self.training_batch_size = training_batch_size
+        self.validation_batch_size = validation_batch_size
 
         self.alpha = alpha
         self.beta = beta
 
-        self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
-        self.likelihood.noise = 1e-4
-        self.likelihood.eval()
-
         data_x = torch.empty(0, self.channels * self.sample_size * self.sample_size)
         data_y = torch.empty(0)
+
+        if guidance_model == "gp":
+            self.guidance_model = GpGuidanceModel(self.channels * self.sample_size * self.sample_size)
+        elif guidance_model == "nn":
+            self.guidance_model = NnGuidanceModel(input_channels = self.channels, input_size = self.sample_size)
+        else:
+            raise NotImplementedError()
+
+        self.guidance_model._x_flatten = self._x_flatten
+        self.guidance_model._x_unflatten = self._x_unflatten
 
         self.register_buffer("data_x", data_x)
         self.register_buffer("data_y", data_y)
 
-        model = ExactGPModel(None, None, self.likelihood)
-        model.rbf_module.base_kernel.lengthscale = (self.channels * self.sample_size * self.sample_size) ** 0.5
-        self.model = disable_train(model)
-
         # dummy parameters for pytorch lightning optimizer to work
         self.dummy = torch.nn.Parameter(torch.zeros(1))
         self.automatic_optimization = False
-
-    def on_fit_start(self):
-        super().on_fit_start()
-
-    @staticmethod
-    def get_noise(self, x, mu):
-
-        x = x.type(torch.float32)
-
-        noise = mu + torch.randn_like(x)
-
-        return noise
-
-    def derivative_y_wrt_x(self, x):
-
-        if len(self.data_y) == 0:
-            return torch.zeros(x.shape[0], device=self.device), torch.zeros_like(x)
-
-        x_flatten = self._x_flatten(x)
-
-        y_pred = []
-        y_grad = []
-
-        for xj in x_flatten:
-
-            with torch.enable_grad():
-                xj.requires_grad = True
-
-                yj = self.likelihood(self.model(xj.unsqueeze(0)))
-
-                mean = yj.mean
-                lcb = yj.mean - 2*(yj.covariance_matrix.item()**0.5)
-                loss = mean + 0.5 * lcb
-
-                grad = torch.autograd.grad(mean, xj, create_graph=False, allow_unused=True)[0]
-
-                xj.requires_grad = False
-
-            y_pred.append(mean.detach())
-            y_grad.append(grad.detach())
-
-        y_pred = torch.stack(y_pred)
-        y_grad = torch.stack(y_grad)
-
-        y_grad = self._x_unflatten(y_grad)
-
-        return y_pred, y_grad
-
-    def _x_flatten(self, x):
-        return einops.rearrange(x, '... C W H -> ... (C W H)', C=self.channels, W=self.sample_size, H=self.sample_size)
-
-    def _x_unflatten(self, x):
-        return einops.rearrange(x, '... (C W H) -> ... C W H', C=self.channels, W=self.sample_size, H=self.sample_size)
 
     @torch.no_grad()
     def training_step(self, _, __):
@@ -124,14 +61,28 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32)
         epsilon_init = epsilon.clone()
+
+        L = 1 + self.current_epoch
+        images_list, latents = self.finetune_and_generate(epsilon, L, batch_size)
+        self.log_params((epsilon-epsilon_init).mean(dim=[0,1]))
+
+        self.log_images(images_list[-1])
+        scores, texts = self.get_scores(images_list[-1])
+
+        self.add_data(self._x_flatten(latents).type(torch.float32), scores)
+
+        self.guidance_model.update_model_data(self.data_x, self.data_y)
+
+        self.log_score(scores, stage="train")
+
+    def finetune_and_generate(self, epsilon, L, batch_size):
+
+        epsilon_init = epsilon.clone()
         epsilon_init_norm = self._x_flatten(epsilon_init).norm(dim=-1)[:,:,None,None,None]
 
-        derivative_y = torch.zeros([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32)
-        
         # ablation
         images_list = []
 
-        L = 1 + self.current_epoch
         latents_traj = torch.zeros_like(epsilon)
         for l in range(L):
 
@@ -155,7 +106,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
             assert torch.all(latents_traj[-1] == latents)
 
-            pred_y, derivative_y = self.derivative_y_wrt_x(latents.type(torch.float32))
+            pred_y, derivative_y = self.guidance_model.derivative_y_wrt_x(latents.type(torch.float32))
 
             epsilon -= self.alpha * derivative_y + self.beta * (latents_traj - latents_traj[-1][None,:])
             epsilon_norm = self._x_flatten(epsilon).norm(dim=-1)[:,:,None,None,None]
@@ -163,18 +114,9 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
             images = self.latents_to_images(latents)
             images_list.append(images)
-
-        self.log_params((epsilon-epsilon_init).mean(dim=[0,1]))
-
-        self.log_images(images)
-        scores, texts = self.get_scores(images)
-
-        self.update_model_data(self._x_flatten(latents).type(torch.float32), scores)
-
-        self.log_score(scores, stage="train")
-
-        self.log_ablation(images_list=images_list, texts=texts, scores=scores)
-
+        
+        return images_list, latents
+        
     def log_ablation(self, images_list=None, scores_list=None, y_pred_list=None, y_uncertainty_list=None, texts=None, scores=None):
         path = str(self.trainer.logger.experiment.dir).removesuffix("/files") + f"/ablation/{self.current_epoch}"
         os.makedirs(path, exist_ok=True)
@@ -239,32 +181,29 @@ class FinetuneDiffusionWithModel(DiffusionBase):
                     f.write(f"Score: {score.item():3f}, Text: {text}\n")
         ############################ save final text ############################
 
-
     def log_params(self, mu):
         self.log(f"||mu||_2", mu.norm())
 
     def test_step(self, _, __):
-        
         return
 
     @torch.no_grad()
     def validation_step(self, _, __):
 
-        return
+        batch_size = self.validation_batch_size
+
+        generator = torch.Generator(device=self.device).manual_seed(1)
+        epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32, generator=generator)
+        L = 1 + self.current_epoch
+        images_list, latents = self.finetune_and_generate(epsilon, L, batch_size)
+        scores, texts = self.get_scores(images_list[-1])
+
+        self.log_ablation(images_list=images_list, texts=texts, scores=scores)
+        self.log_score(scores, stage="validation")
 
     def configure_optimizers(self):
         return torch.optim.Adam([self.dummy], lr=0.)
-    
-    # minimize score
-    # @torch.inference_mode()
-    def update_model_data(self, x, scores):
-        ''' minimize score '''
 
+    def add_data(self, x, y):
         self.data_x = torch.cat([self.data_x, x])
-        self.data_y = torch.cat([self.data_y, scores])
-
-        self.model.set_train_data(
-            inputs=self.data_x, 
-            targets=self.data_y,
-            strict=False,
-        )
+        self.data_y = torch.cat([self.data_y, y])
