@@ -96,7 +96,6 @@ class CnnRegresor(nn.Module):
         self.fc3 = nn.Linear(in_features=256, out_features=1)
         
     def forward(self, x):
-        x = self._x_unflatten(x)
         x = self.pool(F.relu(self.conv1(x)))  # First convolution layer + ReLU + pooling
         x = self.pool(F.relu(self.conv2(x)))  # Second convolution layer + ReLU + pooling
         x = self.pool(F.relu(self.conv3(x)))  # Third convolution layer + ReLU + pooling
@@ -122,8 +121,10 @@ class NnGuidanceModel(nn.Module):
 
     def derivative_y_wrt_x(self, x):
 
+        device = x.device
+
         if not self._trained:
-            return torch.zeros(x.shape[0], device=self.device), torch.zeros_like(x)
+            return torch.zeros(x.shape[0], device=device), torch.zeros_like(x)
 
         x_flatten = self._x_flatten(x)
 
@@ -135,7 +136,7 @@ class NnGuidanceModel(nn.Module):
             with torch.enable_grad():
                 xj.requires_grad = True
 
-                yj = self.model(xj.unsqueeze(0))
+                yj = self.model(self._x_unflatten(xj.unsqueeze(0)))
 
                 grad = torch.autograd.grad(yj, xj, create_graph=False, allow_unused=True)[0]
 
@@ -162,7 +163,7 @@ class NnGuidanceModel(nn.Module):
         for _ in range(100):
             for batch_x, batch_y in dataloader:
                 optimizer.zero_grad()
-                pred_y = self.model(batch_x)
+                pred_y = self.model(self._x_unflatten(batch_x))
                 loss = F.mse_loss(pred_y, batch_y)
                 loss.backward()
                 optimizer.step()

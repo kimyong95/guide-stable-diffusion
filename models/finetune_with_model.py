@@ -75,6 +75,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         self.log_score(scores, stage="train")
 
+    @torch.no_grad()
     def finetune_and_generate(self, epsilon, L, batch_size):
 
         epsilon_init = epsilon.clone()

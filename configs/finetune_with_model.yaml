@@ -2,6 +2,7 @@
 seed_everything: 0
 
 trainer:
+  check_val_every_n_epoch: 5
   log_every_n_steps: 1
   max_epochs: 50
   logger:
@@ -24,10 +25,12 @@ data:
 model:
   class_path: models.finetune_with_model.FinetuneDiffusionWithModel
   init_args:
+    guidance_model: gp
     sd_model: sdxl-lightning
     training_batch_size: 32
-    alpha: 0 # GP step
-    beta: 1e-2 # x_K step
+    validation_batch_size: 16
+    alpha: 100 # GP step
+    beta: 0 # x_K step
     # generate_prompt: "A dolphin riding a cool motorcycle on the beach."
     # reward_target_prompt: "A dolphin riding a cool motorcycle on the beach, the image appears to be natural and realistic."
     # generate_prompt: "A dog and a bear sharing an ice cream."
