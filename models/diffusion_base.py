@@ -133,9 +133,9 @@ class DiffusionBase(LightningBase):
         
         self.log(f"{stage}/score_mean", scores.mean())
     
-    def log_images(self, images, subfix=""):
+    def log_images(self, images, stage="train"):
         images_tensors = torch.stack([torchvision.transforms.ToTensor()(image) for image in images])
-        image_dir = str(self.logger.experiment.dir).removesuffix("/files") + f"/images"
+        image_dir = str(self.logger.experiment.dir).removesuffix("/files") + f"/images/{stage}"
         os.makedirs(image_dir, exist_ok=True)
         grid_image = torchvision.utils.make_grid(images_tensors, nrow=find_closest_factors(len(images_tensors)))
-        torchvision.utils.save_image(grid_image, f"{image_dir}/{self.current_epoch}{subfix}.jpg", format='jpeg')
+        torchvision.utils.save_image(grid_image, f"{image_dir}/{self.current_epoch}.jpg", format='jpeg')

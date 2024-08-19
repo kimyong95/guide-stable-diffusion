@@ -3,17 +3,15 @@ import torch
 from utils.utils import disable_train
 from torch import nn
 
-class ExactGPModel(gpytorch.models.ExactGP):
+class ExactGpModel(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, likelihood):
-        super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
+        super(ExactGpModel, self).__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
-        self.rbf_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
 
     def forward(self, x):
         mean_x = self.mean_module(x)
-        rbf_x = self.rbf_module(x)
-
-        covar_x = rbf_x
+        covar_x = self.covar_module(x)
         
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
@@ -24,8 +22,8 @@ class GpGuidanceModel(nn.Module):
         self.likelihood.noise = 1e-4
         self.likelihood.eval()
 
-        model = ExactGPModel(None, None, self.likelihood)
-        model.rbf_module.base_kernel.lengthscale = (dimension) ** 0.5
+        model = ExactGpModel(None, None, self.likelihood)
+        model.covar_module.base_kernel.lengthscale = (dimension) ** 0.5
         self.model = disable_train(model)
 
         self._x_flatten = None
@@ -109,7 +107,7 @@ class CnnRegresor(nn.Module):
 
 class NnGuidanceModel(nn.Module):
 
-    def __init__(self, input_channels=4, input_size=128):
+    def __init__(self, input_channels=4, input_size=128, batch_size=32):
         super().__init__()
 
         self.model = CnnRegresor(input_channels=input_channels, input_size=input_size)
@@ -118,6 +116,7 @@ class NnGuidanceModel(nn.Module):
         self._x_flatten = None
         self._x_unflatten = None
         self._trained = False
+        self._batch_size = batch_size
 
     def derivative_y_wrt_x(self, x):
 
@@ -158,7 +157,7 @@ class NnGuidanceModel(nn.Module):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
         self.model.train()
         dataset = torch.utils.data.TensorDataset(x, y)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=True)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=self._batch_size, shuffle=True)
         
         for _ in range(100):
             for batch_x, batch_y in dataloader:

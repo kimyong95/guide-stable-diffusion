@@ -25,12 +25,13 @@ data:
 model:
   class_path: models.finetune_with_model.FinetuneDiffusionWithModel
   init_args:
-    guidance_model: gp
+    guidance_model: "gp"
     sd_model: sdxl-lightning
     training_batch_size: 32
     validation_batch_size: 16
-    alpha: 100 # GP step
-    beta: 0 # x_K step
+    alpha: 100 # guidance step
+    reg_mode: "projection"
+    reg: 1e-3
     # generate_prompt: "A dolphin riding a cool motorcycle on the beach."
     # reward_target_prompt: "A dolphin riding a cool motorcycle on the beach, the image appears to be natural and realistic."
     # generate_prompt: "A dog and a bear sharing an ice cream."
