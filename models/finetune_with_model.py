@@ -120,6 +120,11 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             elif self.reg_mode == "delta":
                 delta = epsilon - epsilon_init
                 epsilon = epsilon - self.reg * delta
+            elif self.reg_mode == "delta-projection":
+                delta = epsilon - epsilon_init
+                epsilon = epsilon - self.reg * delta
+                epsilon_norm = self._x_flatten(epsilon).norm(dim=-1)[:,:,None,None,None]
+                epsilon = epsilon / epsilon_norm * epsilon_init_norm
             elif self.reg_mode == "pdf":
                 pdf_value = torch.exp(-0.5 * (epsilon**2).sum(dim=[2,3,4]))
                 epsilon = epsilon - self.reg * pdf_value[:,:,None,None,None] * epsilon
@@ -179,7 +184,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             with open(f"{path}/llava.txt", "w") as f:
                 for score, text in zip(scores, texts):
                     text = text.replace('\n', '').strip()
-                    f.write(f"Score: {score.item():3f}, Text: {text}\n")
+                    f.write(f"Score: {score.item():.2f}, Text: {text}\n")
         ############################ save final text ############################
 
     def log_params(self, mu):

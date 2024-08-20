@@ -9,6 +9,7 @@ import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import asyncio
 import re
+from typing import List
 from utils.utils import retry
 from google.api_core.exceptions import InternalServerError
 
@@ -189,7 +190,7 @@ class GeminiQuestion(RewardBase):
         texts = [r.text.strip() for r in responses]
         return texts
 
-    def __call__(self, images: Image.Image, target_prompt, query_prompt):
+    def __call__(self, images: List[Image.Image], target_prompt, query_prompt):
         
         question_query = f"""Does the prompt '{target_prompt}' accurately describe the image? Rate from 1 (inaccurate) to 5 (accurate).
         Answer in the format: Score=(score), Reason=(reason).
