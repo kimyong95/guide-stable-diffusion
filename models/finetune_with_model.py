@@ -38,8 +38,9 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         data_x = torch.empty(0, self.channels * self.sample_size * self.sample_size)
         data_y = torch.empty(0)
 
-        if guidance_model == "gp":
-            self.guidance_model = GpGuidanceModel(self.channels * self.sample_size * self.sample_size)
+        if guidance_model.startswith("gp"):
+            kernel = guidance_model.split("-")[1] if len(guidance_model.split("-")) == 2 else "rbf"
+            self.guidance_model = GpGuidanceModel(self.channels * self.sample_size * self.sample_size, kernel=kernel)
         elif guidance_model == "nn":
             self.guidance_model = NnGuidanceModel(input_channels = self.channels, input_size = self.sample_size, batch_size=self.training_batch_size)
         else:

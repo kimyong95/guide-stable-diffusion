@@ -4,10 +4,15 @@ from utils.utils import disable_train
 from torch import nn
 
 class ExactGpModel(gpytorch.models.ExactGP):
-    def __init__(self, train_x, train_y, likelihood):
+    def __init__(self, train_x, train_y, likelihood, kernel="rbf"):
         super(ExactGpModel, self).__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        if kernel == "rbf":
+            self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        elif kernel == "linear":
+            self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.LinearKernel())
+        else:
+            raise NotImplementedError()
 
     def forward(self, x):
         mean_x = self.mean_module(x)
@@ -16,14 +21,15 @@ class ExactGpModel(gpytorch.models.ExactGP):
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 class GpGuidanceModel(nn.Module):
-    def __init__(self, dimension) -> None:
+    def __init__(self, dimension, kernel="rbf") -> None:
         super().__init__()
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
         self.likelihood.noise = 1e-4
         self.likelihood.eval()
 
-        model = ExactGpModel(None, None, self.likelihood)
-        model.covar_module.base_kernel.lengthscale = (dimension) ** 0.5
+        model = ExactGpModel(None, None, self.likelihood, kernel=kernel)
+        if kernel == "rbf":
+            model.covar_module.base_kernel.lengthscale = (dimension) ** 0.5
         self.model = disable_train(model)
 
         self._x_flatten = None
