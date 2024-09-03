@@ -1,0 +1,6 @@
+[submodule "related_works/ddpo"]
+	path = related_works/ddpo
+	url = https://github.com/kimyong95/ddpo-pytorch.git
+[submodule "related_works/SEIKO"]
+	path = related_works/SEIKO
+	url = https://github.com/kimyong95/SEIKO.git

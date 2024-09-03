@@ -1,8 +1,8 @@
 name: finetune-stable-diffusion
 channels:
-  - conda-forge
-  - pytorch
   - nvidia
+  - pytorch
+  - conda-forge
 dependencies:
   - python=3.10
   - ipykernel=6
@@ -29,8 +29,6 @@ dependencies:
   - scikit-learn=1.4.2
   - gpytorch::gpytorch=1.11
   - ipywidgets=8.1
-  - cuda-toolkit=12.4
-  - cudnn=8.9
   - pip:
     - jsonargparse[signatures]==4.27.7
     - google-generativeai
