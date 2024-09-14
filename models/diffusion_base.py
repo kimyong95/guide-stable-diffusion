@@ -66,9 +66,9 @@ class DiffusionBase(LightningBase):
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
 
-        self.pipe.unet = disable_train(self.pipe.unet)
-        self.pipe.text_encoder = disable_train(self.pipe.text_encoder)
-        self.pipe.vae = disable_train(self.pipe.vae)
+        for k, c in self.pipe.components.items():
+            if isinstance(c, torch.nn.Module):
+                self.pipe.components[k] = disable_train(c)
 
         self.sample_size = self.pipe.unet.config.sample_size
         self.channels = self.pipe.unet.config.in_channels
@@ -97,6 +97,7 @@ class DiffusionBase(LightningBase):
         try:
             self.pipe.unet.load_graph(cache_path, device=str(self.device))
         except ValueError:
+            os.makedirs("onediff_cache", exist_ok=True)
             self.pipe(prompt=["hello world"], num_inference_steps=self.num_sampling_steps).images
             self.pipe.unet.save_graph(cache_path)
 

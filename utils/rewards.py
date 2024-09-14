@@ -8,6 +8,7 @@ import base64
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import asyncio
+import inspect
 import re
 from typing import List
 from utils.utils import retry
@@ -192,13 +193,28 @@ class GeminiQuestion(RewardBase):
 
     def __call__(self, images: List[Image.Image], target_prompt, query_prompt):
         
-        question_query = f"""Does the prompt '{target_prompt}' accurately describe the image? Rate from 1 (inaccurate) to 5 (accurate).
-        Answer in the format: Score=(score), Reason=(reason).
-        """
+        if not query_prompt:
+            question_query = inspect.cleandoc(f"""
+                Does the prompt '{target_prompt}' accurately describe the image? Rate from 1 (inaccurate) to 5 (accurate).
+                Answer in the format: Score=(score), Reason=(reason).
+            """)
+        else:
+            question_query = query_prompt.format(target_prompt=target_prompt)
 
-        loop = asyncio.get_event_loop()
+        if asyncio.get_event_loop_policy()._local._loop is None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        else:
+            loop = asyncio.get_event_loop()
         
-        contents = [[image, question_query] for image in images]
+        contents = []
+        for image in images:
+            if isinstance(image, Image.Image):
+                contents.append([image, question_query])
+            elif isinstance(image, List):
+                contents.append(image + [question_query])
+            else:
+                raise ValueError(f"Invalid image type: {type(image)}")
         responses = loop.run_until_complete(self.generate_content_async(contents))
         # Eg responses = ["Score=5, Reason=xxx.", ...]
     

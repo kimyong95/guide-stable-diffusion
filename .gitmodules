@@ -1,6 +1,12 @@
-[submodule "related_works/ddpo"]
-	path = related_works/ddpo
-	url = https://github.com/kimyong95/ddpo-pytorch.git
 [submodule "related_works/SEIKO"]
 	path = related_works/SEIKO
 	url = https://github.com/kimyong95/SEIKO.git
+[submodule "related_works/d3po"]
+	path = related_works/d3po
+	url = https://github.com/kimyong95/d3po.git
+[submodule "related_works/svdd"]
+	path = related_works/svdd
+	url = https://github.com/kimyong95/SVDD.git
+[submodule "related_works/svdd-image"]
+	path = related_works/svdd-image
+	url = https://github.com/kimyong95/SVDD-image.git
