@@ -65,7 +65,8 @@ class DiffusionBase(LightningBase):
             self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, unet=unet, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
-
+            
+                    
         for k, c in self.pipe.components.items():
             if isinstance(c, torch.nn.Module):
                 self.pipe.components[k] = disable_train(c)
@@ -115,14 +116,14 @@ class DiffusionBase(LightningBase):
         return einops.rearrange(x, '... (C W H) -> ... C W H', C=self.channels, W=self.sample_size, H=self.sample_size)
 
     # maximize reward
-    # minimize total_scores
+    # minimize scores
     # input: PIL images
     def get_scores(self, images):
 
-        total_scores, outputs = self.reward_func(images, self.reward_target_prompt, self.reward_query_prompt)
-        total_scores = - total_scores
+        scores, outputs = self.reward_func(images, self.reward_target_prompt, self.reward_query_prompt)
+        scores = - scores
 
-        return total_scores, outputs
+        return scores, outputs
 
     def _x_flatten(self, x):
         return einops.rearrange(x, '... C W H -> ... (C W H)', C=self.channels, W=self.sample_size, H=self.sample_size)

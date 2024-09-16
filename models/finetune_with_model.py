@@ -88,15 +88,10 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         images_list = []
         pred_y_list = []
 
-        latents_traj = torch.zeros_like(epsilon)
         for l in range(L):
 
             prior = epsilon[0]
             given_noise = epsilon[1:]
-
-            latents_traj[0] = prior
-            def collect_latents_traj(i,t,_latents):
-                latents_traj[i+1] = _latents
             
             latents = self.pipe(
                 [self.generate_prompt]*batch_size,
@@ -105,11 +100,8 @@ class FinetuneDiffusionWithModel(DiffusionBase):
                 given_noise=given_noise,
                 num_inference_steps=self.num_sampling_steps,
                 guidance_scale=self.guidance_scale,
-                callback=collect_latents_traj,
                 callback_steps=1,
             ).images
-
-            assert torch.all(latents_traj[-1] == latents)
 
             pred_y, derivative_y = self.guidance_model.derivative_y_wrt_x(latents.type(torch.float32))
 
