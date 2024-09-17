@@ -29,9 +29,25 @@ dependencies:
   - scikit-learn=1.4.2
   - gpytorch::gpytorch=1.11
   - ipywidgets=8.1
+  ###### for targetdiff ######
+  - vina=1.2.5
+  - python-lmdb=1.4
+  - pyyaml=6
+  - easydict=1.9
+  - sentencepiece=0.1.99
+  - pdb2pqr=3.6
+  - rdkit=2023.09.6
+  - openbabel=3.1.1
+  ############################
   - pip:
     - jsonargparse[signatures]==4.27.7
-    - google-generativeai
+    - google-generativeai==0.7.*
     - --pre oneflow -f https://github.com/siliconflow/oneflow_releases/releases/expanded_assets/community_cu122
     - --pre onediff
     # - git+https://github.com/siliconflow/onediff.git#subdirectory=onediff_diffusers_extensions
+    ###### for targetdiff ######
+    # - git+https://github.com/Valdes-Tresanco-MS/AutoDockTools_py3.git@aee55d50d5bdcfdbcd80220499df8cde2a8f4b2a
+    # - meeko==0.1.dev3
+    # - pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.4.0+cu124.html
+    # - torch_geometric
+    ############################

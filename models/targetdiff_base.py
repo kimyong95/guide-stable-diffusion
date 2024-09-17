@@ -146,18 +146,9 @@ class TargetdiffBase(LightningBase):
         try:
             pred_aromatic = transforms.is_aromatic_from_index(v, mode="add_aromatic")
             mol = reconstruct.reconstruct_from_generated(pos, pred_atom_type, pred_aromatic)
-            smiles = Chem.MolToSmiles(mol)
         except reconstruct.MolReconsError:
             return None
         
-        if '.' in smiles:
-            return None
-        
-        try:
-            _ = scoring_func.get_chem(mol)
-        except:
-            return None
-
         return mol
 
     def _x_flatten(self, x):
@@ -167,9 +158,13 @@ class TargetdiffBase(LightningBase):
         return einops.rearrange(x, '... (N D) -> ... N D', N=self.num_atoms, D=self.dim)
 
     def log_score(self, scores, stage="train"):
+
+        MAX_VINA_SCORE = 11.6
         
         self.log(f"{stage}/score_mean", scores.mean())
+        self.log(f"{stage}/raw_score_mean", scores.mean() * MAX_VINA_SCORE)
         self.log(f"{stage}/success_socre_mean", torch.nan_to_num(scores[scores != 0.0].mean(),0))
+        self.log(f"{stage}/success_raw_socre_mean", torch.nan_to_num(scores[scores != 0.0].mean(),0) * MAX_VINA_SCORE)
 
     def log_molecules(self, pos_list, v_list, scores):
         
@@ -181,11 +176,11 @@ class TargetdiffBase(LightningBase):
             mol = self.reconstruct_molecule(pos, v)
             if mol is not None:
                 vina_task = VinaDockingTask.from_generated_mol(mol, self.data.ligand_filename, protein_root=self.resolve_relative_dir("data/test_set"))
-                ligand_file = vina_task.ligand_path[:-4] + '.pdbqt'
+                ligand_str = PrepLig(vina_task.ligand_str, 'sdf').get_pdbqt()
                 receptor_file = vina_task.receptor_path[:-4] + '.pdbqt'
 
                 molecules_list.append(mol)
-                ligand_list.append(ligand_file)
+                ligand_list.append(ligand_str)
                 receptor_list.append(receptor_file)
             else:
                 molecules_list.append(None)
@@ -198,7 +193,8 @@ class TargetdiffBase(LightningBase):
         for i, (mol, ligand_file, receptor_file, score) in enumerate(zip(molecules_list, ligand_list, receptor_list, scores)):
             if mol is not None:
                 os.makedirs(f"{_dir}/{i}", exist_ok=True)
-                shutil.copyfile(ligand_file, f"{_dir}/{i}/ligand.pdbqt")
+                with open(f"{_dir}/{i}/ligand.pdbqt", "w") as f:
+                    f.write(ligand_str)
                 shutil.copyfile(receptor_file, f"{_dir}/{i}/receptor.pdbqt")
         
         # save scores

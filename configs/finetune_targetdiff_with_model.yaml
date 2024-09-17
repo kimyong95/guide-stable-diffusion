@@ -28,6 +28,6 @@ model:
     guidance_model: "gp"
     training_batch_size: 32
     validation_batch_size: 16
-    alpha: 1.0 # guidance step
+    alpha: 10 # guidance step
     reg_mode: "projection"
     reg: 1e-3
