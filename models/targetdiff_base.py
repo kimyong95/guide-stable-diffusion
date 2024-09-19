@@ -17,6 +17,7 @@ from torchmetrics.image import StructuralSimilarityIndexMeasure
 from diffusers import StableDiffusionXLPipeline, AutoencoderKL, UNet2DConditionModel
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
+import asyncio
 
 import shutil
 from related_works.targetdiff.utils import misc, reconstruct, transforms
@@ -135,12 +136,12 @@ class TargetdiffBase(LightningBase):
                 failed_count += 1
             else:
                 vina_task = VinaDockingTask.from_generated_mol(mol, self.data.ligand_filename, protein_root=self.resolve_relative_dir("data/test_set"))
-                vina_score = vina_task.run(mode='score_only', exhaustiveness=16)
+                vina_score = asyncio.run(vina_task.run(mode='score_only', exhaustiveness=16))
                 scores[i] = vina_score[0]["affinity"] / MAX_VINA_SCORE
 
         return scores, failed_count
 
-    def reconstruct_molecule(self, pos, v):
+    def reconstruct_molecule(pos, v):
         # reconstruction
         pred_atom_type = transforms.get_atomic_number_from_index(v, mode="add_aromatic")
         try:
