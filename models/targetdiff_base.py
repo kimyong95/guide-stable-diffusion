@@ -19,6 +19,7 @@ from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
 import asyncio
 
+import random
 import shutil
 from related_works.targetdiff.utils import misc, reconstruct, transforms
 from rdkit import Chem
@@ -35,15 +36,17 @@ from torch_geometric.transforms import Compose
 
 class TargetdiffBase(LightningBase):
 
-    def __init__(self):
+    def __init__(self, data_id, vina_web_url=None, pos_only=True):
 
         super().__init__()
 
         self.targetdiff_root = "related_works/targetdiff"
-        self.model, self.data = self.get_targetdiff()
-        self.num_sampling_steps = 200
-        self.num_atoms = 31
-        self.dim = 3
+        self.model, self.data = self.get_targetdiff(data_id=data_id)
+        self.vina_web_url = vina_web_url
+        self.pos_only = pos_only
+        self.num_sampling_steps = 20
+        self.num_atoms = self.data.ligand_pos.shape[0]
+        self.dim = self.data.ligand_pos.shape[1]
 
     
     def get_targetdiff(self, data_id=0, ckpt_path="./pretrained_models/pretrained_diffusion.pt"):
@@ -73,7 +76,7 @@ class TargetdiffBase(LightningBase):
             ckpt['config'].model,
             protein_atom_feature_dim=protein_featurizer.feature_dim,
             ligand_atom_feature_dim=ligand_featurizer.feature_dim,
-            scheduler="ddim",
+            scheduler="finetune-eular",
         )
         model.load_state_dict(ckpt['model'])
 
@@ -92,6 +95,7 @@ class TargetdiffBase(LightningBase):
         # if not isinstance(self.trainer.logger, DummyLogger):
         #     self.compile()
 
+        # self.model = torch.compile(self.model)
         return self
 
     def compile(self):
@@ -110,7 +114,7 @@ class TargetdiffBase(LightningBase):
             self.model, self.data, batch_size,
             batch_size=batch_size, device=self.device,
             num_steps=self.num_sampling_steps,
-            pos_only=True,
+            pos_only=self.pos_only,
             center_pos_mode="protein",
             sample_num_atoms="ref",
             epsilon=epsilon,
@@ -129,24 +133,49 @@ class TargetdiffBase(LightningBase):
 
         scores = torch.zeros(len(pos_list), device=self.device)
         failed_count = 0
+        loop = asyncio.get_event_loop()
+
         for i, (pos, v) in enumerate(zip(pos_list, v_list)):
-            mol = self.reconstruct_molecule(pos, v)
-            if mol is None:
-                scores[i] = 0.0
+            scores[i], failed_ = loop.run_until_complete(self.get_score(pos,v))
+            if failed_:
                 failed_count += 1
-            else:
-                vina_task = VinaDockingTask.from_generated_mol(mol, self.data.ligand_filename, protein_root=self.resolve_relative_dir("data/test_set"))
-                vina_score = asyncio.run(vina_task.run(mode='score_only', exhaustiveness=16))
-                scores[i] = vina_score[0]["affinity"] / MAX_VINA_SCORE
 
         return scores, failed_count
+    
+    def get_scores_parallel(self, pos_list, v_list):
+        loop = asyncio.get_event_loop()
+        tasks = [loop.create_task(self.get_score(pos,v)) for pos, v in zip(pos_list, v_list)]
+        results = loop.run_until_complete(asyncio.gather(*tasks))
+        scores, failed = map(list, zip(*results))
+        failed_count = sum(failed)
+        return torch.tensor(scores, dtype=torch.float32, device=self.device), failed_count
 
-    def reconstruct_molecule(pos, v):
+    async def get_score(self, pos, v):
+
+        MAX_VINA_SCORE = 11.6
+
+        print("start get_score")
+        assert pos.shape == (self.num_atoms, 3)
+        score = 0.0
+        mol = self.reconstruct_molecule(pos, v)
+        print("reconstructed")
+        if mol is not None:
+            vina_task = VinaDockingTask.from_generated_mol(mol, self.data.ligand_filename, protein_root=self.resolve_relative_dir("data/test_set"), web_dock_url=self.vina_web_url)
+            score = (await vina_task.run(mode='score_only', exhaustiveness=16))[0]["affinity"] / MAX_VINA_SCORE
+        
+        failed = bool(mol is None)
+
+        print("end get_score")
+        return score, failed
+
+    def reconstruct_molecule(self, pos, v):
         # reconstruction
         pred_atom_type = transforms.get_atomic_number_from_index(v, mode="add_aromatic")
         try:
             pred_aromatic = transforms.is_aromatic_from_index(v, mode="add_aromatic")
             mol = reconstruct.reconstruct_from_generated(pos, pred_atom_type, pred_aromatic)
+        except KeyboardInterrupt:
+            raise
         except reconstruct.MolReconsError:
             return None
         

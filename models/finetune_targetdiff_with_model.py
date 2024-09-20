@@ -22,11 +22,12 @@ colors = Dark2_4.mpl_colors
 from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 from models.finetune_with_model import FinetuneDiffusionWithModel
 from models.targetdiff_base import TargetdiffBase
+import asyncio
 
 class FinetuneTargetdiffWithModel(TargetdiffBase):
 
-    def __init__(self, guidance_model, training_batch_size, validation_batch_size, alpha, reg_mode, reg):
-        super().__init__()
+    def __init__(self, guidance_model, training_batch_size, validation_batch_size, alpha, reg_mode, reg, data_id, pos_only, vina_web_url):
+        super().__init__(data_id=data_id, pos_only=pos_only, vina_web_url=vina_web_url)
 
         self.training_batch_size = training_batch_size
         self.validation_batch_size = validation_batch_size
@@ -66,7 +67,7 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
         pred_pos, pred_v, epsilon, pred_y_list = self.finetune_and_generate(epsilon, L, batch_size)
         self.log_params((epsilon-epsilon_init).mean(dim=[0,1]))
 
-        scores, failed_count = self.get_scores(pred_pos, pred_v)
+        scores, failed_count = self.get_scores_parallel(pred_pos, pred_v)
 
         pred_pos_tensor = torch.from_numpy(np.array(pred_pos)).to(self.device).type(torch.float32)
         self.add_data(self._x_flatten(pred_pos_tensor), scores)
@@ -140,7 +141,7 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
         L = 1 + self.current_epoch
         pred_pos, pred_v, epsilon, pred_y_list = self.finetune_and_generate(epsilon, L, batch_size)
 
-        scores, failed_count = self.get_scores(pred_pos, pred_v)        
+        scores, failed_count = self.get_scores_parallel(pred_pos, pred_v)
         self.log_score(scores, stage="validation")
         self.log_molecules(pred_pos, pred_v, scores)
         self.log(f"validation/failed_rate", float(failed_count) / batch_size)
