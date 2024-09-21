@@ -28,7 +28,7 @@ model:
     guidance_model: "gp"
     training_batch_size: 32
     validation_batch_size: 16
-    alpha: 10 # guidance step
+    alpha: 80 # guidance step
     pos_only: True
     reg_mode: "projection"
     reg: 1e-3
