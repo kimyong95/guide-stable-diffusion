@@ -36,17 +36,24 @@ from torch_geometric.transforms import Compose
 
 class TargetdiffBase(LightningBase):
 
-    def __init__(self, data_id, vina_web_url=None, pos_only=True):
+    def __init__(self, data_id, vina_web_url=None, pos_only=True, scheduler="ddim"):
 
         super().__init__()
 
         self.targetdiff_root = "related_works/targetdiff"
+        self.scheduler = scheduler
         self.model, self.data = self.get_targetdiff(data_id=data_id)
         self.vina_web_url = vina_web_url
         self.pos_only = pos_only
-        self.num_sampling_steps = 20
         self.num_atoms = self.data.ligand_pos.shape[0]
         self.dim = self.data.ligand_pos.shape[1]
+        
+        if scheduler == "ddim":
+            self.num_sampling_steps = 200
+        elif scheduler == "finetune-eular":
+            self.num_sampling_steps = 20
+        else:
+            raise NotImplementedError()
 
     
     def get_targetdiff(self, data_id=0, ckpt_path="./pretrained_models/pretrained_diffusion.pt"):
@@ -76,7 +83,7 @@ class TargetdiffBase(LightningBase):
             ckpt['config'].model,
             protein_atom_feature_dim=protein_featurizer.feature_dim,
             ligand_atom_feature_dim=ligand_featurizer.feature_dim,
-            scheduler="finetune-eular",
+            scheduler=self.scheduler,
         )
         model.load_state_dict(ckpt['model'])
 
