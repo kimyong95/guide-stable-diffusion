@@ -23,6 +23,7 @@ dependencies:
   - diffusers=0.29.2
   - accelerate=0.33
   - scipy=1.12
+  - python-dotenv=1.0.1
   - transformers=4.43.2
   - open-clip-torch=2.24.0
   - cma=3.3
@@ -38,6 +39,7 @@ dependencies:
   - pdb2pqr=3.6
   - rdkit=2023.09.6
   - openbabel=3.1.1
+  - jsonpickle=3.0
   ############################
   - pip:
     - jsonargparse[signatures]==4.27.7

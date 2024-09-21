@@ -33,5 +33,5 @@ model:
     reg_mode: "projection"
     reg: 1e-3
     data_id: 0
-    # vina_web_url: null
+    scheduler: "ddim"
     vina_web_url: https://foydiwfg7gjyejxzapwso5czuu0jzxwt.lambda-url.us-east-2.on.aws

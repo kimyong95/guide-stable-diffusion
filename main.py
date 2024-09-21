@@ -11,6 +11,9 @@ import wandb
 import inspect
 import shutil
 import torch
+from dotenv import load_dotenv
+
+load_dotenv()
 torch.set_float32_matmul_precision('high')
 
 # simple demo classes for your convenience
