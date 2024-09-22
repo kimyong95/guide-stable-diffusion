@@ -23,6 +23,7 @@ import random
 import shutil
 from related_works.targetdiff.utils import misc, reconstruct, transforms
 from rdkit import Chem
+from rdkit.Chem.rdchem import AtomValenceException
 from related_works.targetdiff.models.molopt_score_model import ScorePosNet3D, log_sample_categorical
 from onediff.infer_compiler import oneflow_compile
 import related_works.targetdiff.utils.transforms as trans
@@ -36,7 +37,7 @@ from torch_geometric.transforms import Compose
 
 class TargetdiffBase(LightningBase):
 
-    def __init__(self, data_id, vina_web_url=None, pos_only=True, scheduler="ddim"):
+    def __init__(self, data_id, vina_web_url=None, pos_only=True, scheduler="ddim", reward_func="vina"):
 
         super().__init__()
 
@@ -47,10 +48,12 @@ class TargetdiffBase(LightningBase):
         self.pos_only = pos_only
         self.num_atoms = self.data.ligand_pos.shape[0]
         self.dim = self.data.ligand_pos.shape[1]
+        self.num_classes = self.model.num_classes
+        self.reward_func = reward_func
         
         if scheduler == "ddim":
             self.num_sampling_steps = 200
-        elif scheduler == "finetune-eular":
+        elif scheduler.startswith("finetune-eular"):
             self.num_sampling_steps = 20
         else:
             raise NotImplementedError()
@@ -85,6 +88,7 @@ class TargetdiffBase(LightningBase):
             ligand_atom_feature_dim=ligand_featurizer.feature_dim,
             scheduler=self.scheduler,
         )
+
         model.load_state_dict(ckpt['model'])
 
         data = test_set[data_id]
@@ -133,11 +137,6 @@ class TargetdiffBase(LightningBase):
     # minimize scores
     def get_scores(self, pos_list, v_list):
 
-        # Tang S, Chen R, Lin M, Lin Q, Zhu Y, Ding J, Hu H, Ling M, Wu J. Accelerating AutoDock Vina with GPUs. Molecules. 2022 May 9;27(9):3041. doi: 10.3390/molecules27093041. PMID: 35566391; PMCID: PMC9103882.
-        # cite: The AutoDock Vina score for drug-like compounds can reach as low as -11.6 kcal/mol.
-        # used for normalizing the score to [0, 1]
-        MAX_VINA_SCORE = 11.6
-
         scores = torch.zeros(len(pos_list), device=self.device)
         failed_count = 0
         loop = asyncio.get_event_loop()
@@ -157,17 +156,32 @@ class TargetdiffBase(LightningBase):
         failed_count = sum(failed)
         return torch.tensor(scores, dtype=torch.float32, device=self.device), failed_count
 
+    # minimize score (lower is better)
     async def get_score(self, pos, v):
-
-        MAX_VINA_SCORE = 11.6
 
         assert pos.shape == (self.num_atoms, 3)
         score = 0.0
         mol = self.reconstruct_molecule(pos, v)
         if mol is not None:
-            vina_task = VinaDockingTask.from_generated_mol(mol, self.data.ligand_filename, protein_root=self.resolve_relative_dir("data/test_set"), web_dock_url=self.vina_web_url)
-            score = (await vina_task.run(mode='score_only', exhaustiveness=16))[0]["affinity"] / MAX_VINA_SCORE
-        
+                
+            # minimize vina affinity score
+            if self.reward_func == "vina":
+                # Tang S, Chen R, Lin M, Lin Q, Zhu Y, Ding J, Hu H, Ling M, Wu J. Accelerating AutoDock Vina with GPUs. Molecules. 2022 May 9;27(9):3041. doi: 10.3390/molecules27093041. PMID: 35566391; PMCID: PMC9103882.
+                # cite: The AutoDock Vina score for drug-like compounds can reach as low as -11.6 kcal/mol.
+                # used for normalizing the score to [0, 1]
+                MAX_VINA_SCORE = 11.6
+                vina_task = VinaDockingTask.from_generated_mol(mol, self.data.ligand_filename, protein_root=self.resolve_relative_dir("data/test_set"), web_dock_url=self.vina_web_url)
+                vina_score = (await vina_task.run(mode='score_only', exhaustiveness=16))[0]["affinity"]
+                score = vina_score / MAX_VINA_SCORE
+            
+            # maximize QED, maximum value is 1
+            elif self.reward_func == "qed":
+                chem_results = scoring_func.get_chem(mol)
+                qed = chem_results["qed"]
+                score = - qed
+            else:
+                raise NotImplementedError()
+                
         failed = bool(mol is None)
 
         return score, failed
@@ -178,27 +192,37 @@ class TargetdiffBase(LightningBase):
         try:
             pred_aromatic = transforms.is_aromatic_from_index(v, mode="add_aromatic")
             mol = reconstruct.reconstruct_from_generated(pos, pred_atom_type, pred_aromatic)
+            chem_results = scoring_func.get_chem(mol)
         except KeyboardInterrupt:
             raise
-        except reconstruct.MolReconsError:
+        except (reconstruct.MolReconsError, AtomValenceException):
             return None
         
         return mol
 
     def _x_flatten(self, x):
-        return einops.rearrange(x, '... N D -> ... (N D)', N=self.num_atoms, D=self.dim)
+        return einops.rearrange(x, '... N D -> ... (N D)', N=self.num_atoms)
 
     def _x_unflatten(self, x):
-        return einops.rearrange(x, '... (N D) -> ... N D', N=self.num_atoms, D=self.dim)
+        return einops.rearrange(x, '... (N D) -> ... N D', N=self.num_atoms)
 
     def log_score(self, scores, stage="train"):
 
         MAX_VINA_SCORE = 11.6
         
         self.log(f"{stage}/score_mean", scores.mean())
-        self.log(f"{stage}/raw_score_mean", scores.mean() * MAX_VINA_SCORE)
         self.log(f"{stage}/success_socre_mean", torch.nan_to_num(scores[scores != 0.0].mean(),0))
-        self.log(f"{stage}/success_raw_socre_mean", torch.nan_to_num(scores[scores != 0.0].mean(),0) * MAX_VINA_SCORE)
+
+        if self.reward_func == "vina":
+            raw_scores = scores * MAX_VINA_SCORE
+            raw_success_scores = torch.nan_to_num(scores[scores != 0.0],0) * MAX_VINA_SCORE
+
+            self.log(f"{stage}/raw_score_mean", raw_scores.mean())
+            self.log(f"{stage}/success_raw_socre_mean", raw_success_scores.mean())
+
+        elif self.reward_func == "qed":
+            self.log(f"{stage}/raw_score_mean", - scores.mean())
+            self.log(f"{stage}/success_raw_socre_mean", - torch.nan_to_num(scores[scores != 0.0].mean(),0))
 
     def log_molecules(self, pos_list, v_list, scores):
         

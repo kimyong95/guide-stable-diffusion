@@ -26,8 +26,8 @@ import asyncio
 
 class FinetuneTargetdiffWithModel(TargetdiffBase):
 
-    def __init__(self, guidance_model, training_batch_size, validation_batch_size, alpha, reg_mode, reg, data_id, pos_only, vina_web_url, scheduler):
-        super().__init__(data_id=data_id, pos_only=pos_only, vina_web_url=vina_web_url, scheduler=scheduler)
+    def __init__(self, guidance_model, training_batch_size, validation_batch_size, alpha, reg_mode, reg, data_id, pos_only, vina_web_url, scheduler, reward_func, finetune_atoms_type):
+        super().__init__(data_id=data_id, pos_only=pos_only, vina_web_url=vina_web_url, scheduler=scheduler, reward_func=reward_func)
 
         self.training_batch_size = training_batch_size
         self.validation_batch_size = validation_batch_size
