@@ -98,7 +98,7 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
             
             pred_pos_tensor_star = pred_pos_tensor.clone()
             for _ in range(self.guidance_model_steps):
-                pred_y, derivative_y = self.guidance_model.derivative_y_wrt_x(pred_pos_tensor_star, l/L)
+                pred_y, derivative_y = self.guidance_model.derivative_y_wrt_x(pred_pos_tensor_star)
                 pred_pos_tensor_star = pred_pos_tensor_star - self.guidance_model_beta * derivative_y
 
             epsilon += self.alpha * (pred_pos_tensor_star - pred_pos_tensor)
