@@ -4,11 +4,12 @@ from utils.utils import disable_train
 from torch import nn
 
 class ExactGpModel(gpytorch.models.ExactGP):
-    def __init__(self, train_x, train_y, likelihood, kernel="rbf"):
+    def __init__(self, train_x, train_y, likelihood, x_dim, kernel="rbf"):
         super(ExactGpModel, self).__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
+
         if kernel == "rbf":
-            self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+            self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=x_dim))
         elif kernel == "linear":
             self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.LinearKernel())
         else:
@@ -21,16 +22,21 @@ class ExactGpModel(gpytorch.models.ExactGP):
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 class GpGuidanceModel(nn.Module):
-    def __init__(self, dimension, kernel="rbf") -> None:
+    def __init__(self, dimension, train_when_update, kernel="rbf") -> None:
         super().__init__()
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
         self.likelihood.noise = 1e-4
         self.likelihood.eval()
 
-        model = ExactGpModel(None, None, self.likelihood, kernel=kernel)
+        self.train_when_update = train_when_update
+
+        model = ExactGpModel(None, None, self.likelihood, x_dim=dimension, kernel=kernel)
         if kernel == "rbf":
             model.covar_module.base_kernel.lengthscale = (dimension) ** 0.5
-        self.model = disable_train(model)
+
+        self.model = model
+        self.model.eval()
+        self.model.requires_grad_(False)
 
         self._x_flatten = None
         self._x_unflatten = None
@@ -79,6 +85,43 @@ class GpGuidanceModel(nn.Module):
             targets=y,
             strict=False,
         )
+
+        if self.train_when_update:
+            self.train_model(x, y)
+
+    def train_model(self, x, y, training_iter=50):
+        # Find optimal model hyperparameters
+        
+        self.model.train()
+        self.model.requires_grad_(True)
+        self.likelihood.train()
+
+        # Use the adam optimizer
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.1)  # Includes GaussianLikelihood parameters
+
+        # "Loss" for GPs - the marginal log likelihood
+        mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
+
+        for i in range(training_iter):
+            # Zero gradients from previous iteration
+            optimizer.zero_grad()
+            # Output from model
+            output = self.model(x)
+            # Calc loss and backprop gradients
+            loss = -mll(output, y)
+            loss.backward()
+            # print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
+            #     i + 1, training_iter, loss.item(),
+            #     self.model.covar_module.base_kernel.lengthscale.mean().item(),
+            #     self.model.likelihood.noise.item()
+            # ))
+            optimizer.step()
+
+        self.model.eval()
+        self.model.requires_grad_(False)
+        self.likelihood.eval()
+
+
 
 from torch import nn
 import torch.nn.functional as F

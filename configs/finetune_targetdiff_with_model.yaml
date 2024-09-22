@@ -26,6 +26,9 @@ model:
   class_path: models.finetune_targetdiff_with_model.FinetuneTargetdiffWithModel
   init_args:
     guidance_model: "gp"
+    guidance_model_steps: 1 # numer of innter loop step size
+    guidance_model_beta: 1 # innter loop step size
+    train_guidance_model: False
     training_batch_size: 32
     validation_batch_size: 16
     alpha: 80 # guidance step

@@ -26,7 +26,7 @@ import asyncio
 
 class FinetuneTargetdiffWithModel(TargetdiffBase):
 
-    def __init__(self, guidance_model, training_batch_size, validation_batch_size, alpha, reg_mode, reg, data_id, pos_only, vina_web_url, scheduler):
+    def __init__(self, guidance_model, training_batch_size, validation_batch_size, alpha, reg_mode, reg, data_id, pos_only, vina_web_url, scheduler, train_guidance_model, guidance_model_steps, guidance_model_beta):
         super().__init__(data_id=data_id, pos_only=pos_only, vina_web_url=vina_web_url, scheduler=scheduler)
 
         self.training_batch_size = training_batch_size
@@ -35,13 +35,16 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
         self.alpha = alpha
         self.reg_mode = reg_mode
         self.reg = reg
+        self.train_guidance_model = train_guidance_model
+        self.guidance_model_steps = guidance_model_steps
+        self.guidance_model_beta = guidance_model_beta
 
         data_x = torch.empty(0, self.num_atoms * self.dim)
         data_y = torch.empty(0)
 
         if guidance_model.startswith("gp"):
             kernel = guidance_model.split("-")[1] if len(guidance_model.split("-")) == 2 else "rbf"
-            self.guidance_model = GpGuidanceModel(self.num_atoms * self.dim, kernel=kernel)
+            self.guidance_model = GpGuidanceModel(self.num_atoms * self.dim, train_when_update=train_guidance_model, kernel=kernel)
         else:
             raise NotImplementedError()
 
@@ -93,9 +96,12 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
 
             pred_pos_tensor = torch.from_numpy(np.array(pred_pos)).to(self.device).type(torch.float32)
             
-            pred_y, derivative_y = self.guidance_model.derivative_y_wrt_x(pred_pos_tensor)
+            pred_pos_tensor_star = pred_pos_tensor.clone()
+            for _ in range(self.guidance_model_steps):
+                pred_y, derivative_y = self.guidance_model.derivative_y_wrt_x(pred_pos_tensor_star, l/L)
+                pred_pos_tensor_star = pred_pos_tensor_star - self.guidance_model_beta * derivative_y
 
-            epsilon -= self.alpha * derivative_y
+            epsilon += self.alpha * (pred_pos_tensor_star - pred_pos_tensor)
 
             if self.reg_mode == "projection":
                 epsilon_norm = self._x_flatten(epsilon).norm(dim=-1)[:,:,None,None]
