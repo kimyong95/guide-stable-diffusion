@@ -166,8 +166,8 @@ class TargetdiffBase(LightningBase):
         mol = self.reconstruct_molecule(pos, v)
         if mol is not None:
             vina_task = VinaDockingTask.from_generated_mol(mol, self.data.ligand_filename, protein_root=self.resolve_relative_dir("data/test_set"), web_dock_url=self.vina_web_url)
-            score = (await vina_task.run(mode='score_only', exhaustiveness=16))[0]["affinity"] / MAX_VINA_SCORE
-        
+            score = (await vina_task.run(mode='minimize', exhaustiveness=16))[0]["affinity"] / MAX_VINA_SCORE
+            score = score if score < 0.0 else 0.0
         failed = bool(mol is None)
 
         return score, failed
@@ -197,8 +197,12 @@ class TargetdiffBase(LightningBase):
         
         self.log(f"{stage}/score_mean", scores.mean())
         self.log(f"{stage}/raw_score_mean", scores.mean() * MAX_VINA_SCORE)
-        self.log(f"{stage}/success_socre_mean", torch.nan_to_num(scores[scores != 0.0].mean(),0))
-        self.log(f"{stage}/success_raw_socre_mean", torch.nan_to_num(scores[scores != 0.0].mean(),0) * MAX_VINA_SCORE)
+
+        self.log(f"{stage}/score_min", scores.min())
+        self.log(f"{stage}/raw_score_min", scores.min() * MAX_VINA_SCORE)
+
+        self.log(f"{stage}/score_median", scores.median())
+        self.log(f"{stage}/raw_score_median", scores.median() * MAX_VINA_SCORE)
 
     def log_molecules(self, pos_list, v_list, scores):
         

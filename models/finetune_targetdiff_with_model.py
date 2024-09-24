@@ -26,7 +26,7 @@ import asyncio
 
 class FinetuneTargetdiffWithModel(TargetdiffBase):
 
-    def __init__(self, guidance_model, training_batch_size, validation_batch_size, alpha, reg_mode, reg, data_id, pos_only, vina_web_url, scheduler, train_guidance_model, guidance_model_steps, guidance_model_beta):
+    def __init__(self, guidance_model, training_batch_size, validation_batch_size, alpha, reg_mode, reg, data_id, pos_only, vina_web_url, scheduler):
         super().__init__(data_id=data_id, pos_only=pos_only, vina_web_url=vina_web_url, scheduler=scheduler)
 
         self.training_batch_size = training_batch_size
@@ -35,16 +35,13 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
         self.alpha = alpha
         self.reg_mode = reg_mode
         self.reg = reg
-        self.train_guidance_model = train_guidance_model
-        self.guidance_model_steps = guidance_model_steps
-        self.guidance_model_beta = guidance_model_beta
 
         data_x = torch.empty(0, self.num_atoms * self.dim)
         data_y = torch.empty(0)
 
         if guidance_model.startswith("gp"):
             kernel = guidance_model.split("-")[1] if len(guidance_model.split("-")) == 2 else "rbf"
-            self.guidance_model = GpGuidanceModel(self.num_atoms * self.dim, train_when_update=train_guidance_model, kernel=kernel)
+            self.guidance_model = GpGuidanceModel(self.num_atoms * self.dim, kernel=kernel)
         else:
             raise NotImplementedError()
 
@@ -67,14 +64,14 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
         epsilon_init = epsilon.clone()
 
         L = 1 + self.current_epoch
-        pred_pos, pred_v, epsilon, pred_y_list = self.finetune_and_generate(epsilon, L, batch_size)
+        pred_pos, pred_v, epsilon = self.finetune_and_generate(epsilon, L, batch_size)
         self.log_params((epsilon-epsilon_init).mean(dim=[0,1]))
 
         scores, failed_count = self.get_scores_parallel(pred_pos, pred_v)
 
         pred_pos_tensor = torch.from_numpy(np.array(pred_pos)).to(self.device).type(torch.float32)
         self.add_data(self._x_flatten(pred_pos_tensor), scores)
-        self.guidance_model.update_model_data(self.data_x, self.data_y)
+        # self.guidance_model.update_model_data(self.data_x, self.data_y)
 
         self.log_score(scores, stage="train")
         self.log(f"train/failed_rate", float(failed_count) / batch_size)
@@ -96,12 +93,13 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
 
             pred_pos_tensor = torch.from_numpy(np.array(pred_pos)).to(self.device).type(torch.float32)
             
-            pred_pos_tensor_star = pred_pos_tensor.clone()
-            for _ in range(self.guidance_model_steps):
-                pred_y, derivative_y = self.guidance_model.derivative_y_wrt_x(pred_pos_tensor_star)
-                pred_pos_tensor_star = pred_pos_tensor_star - self.guidance_model_beta * derivative_y
+            # pred_y, derivative_y = self.guidance_model.derivative_y_wrt_x(pred_pos_tensor_star)
+            # pred_pos_tensor_star = pred_pos_tensor_star - self.guidance_model_beta * derivative_y
 
-            epsilon += self.alpha * (pred_pos_tensor_star - pred_pos_tensor)
+            if len(self.data_x) > 0:
+                best_id = self.data_y.argmin()
+                pred_pos_tensor_star = self._x_unflatten(self.data_x[best_id])
+                epsilon += self.alpha * (pred_pos_tensor_star - pred_pos_tensor)[None,:,:,:]
 
             if self.reg_mode == "projection":
                 epsilon_norm = self._x_flatten(epsilon).norm(dim=-1)[:,:,None,None]
@@ -123,12 +121,8 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
                 pass
             else:
                 raise NotImplementedError()
-
-            pred_y_list.append(pred_y.squeeze())
-
-        pred_y_list = torch.stack(pred_y_list)
         
-        return pred_pos, pred_v, epsilon, pred_y_list
+        return pred_pos, pred_v, epsilon
         
     
     def log_params(self, mu):
@@ -145,7 +139,7 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
         generator = torch.Generator(device=self.device).manual_seed(1)
         epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.num_atoms, self.dim], device=self.device, dtype=torch.float32, generator=generator)
         L = 1 + self.current_epoch
-        pred_pos, pred_v, epsilon, pred_y_list = self.finetune_and_generate(epsilon, L, batch_size)
+        pred_pos, pred_v, epsilon = self.finetune_and_generate(epsilon, L, batch_size)
 
         scores, failed_count = self.get_scores_parallel(pred_pos, pred_v)
         self.log_score(scores, stage="validation")

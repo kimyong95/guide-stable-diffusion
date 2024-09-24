@@ -22,13 +22,11 @@ class ExactGpModel(gpytorch.models.ExactGP):
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 class GpGuidanceModel(nn.Module):
-    def __init__(self, dimension, train_when_update, kernel="rbf") -> None:
+    def __init__(self, dimension, kernel="rbf") -> None:
         super().__init__()
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
         self.likelihood.noise = 1e-4
         self.likelihood.eval()
-
-        self.train_when_update = train_when_update
 
         model = ExactGpModel(None, None, self.likelihood, x_dim=dimension, kernel=kernel)
         if kernel == "rbf":
@@ -85,41 +83,6 @@ class GpGuidanceModel(nn.Module):
             targets=y,
             strict=False,
         )
-
-        if self.train_when_update:
-            self.train_model(x, y)
-
-    def train_model(self, x, y, training_iter=50):
-        # Find optimal model hyperparameters
-        
-        self.model.train()
-        self.model.requires_grad_(True)
-        self.likelihood.train()
-
-        # Use the adam optimizer
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.1)  # Includes GaussianLikelihood parameters
-
-        # "Loss" for GPs - the marginal log likelihood
-        mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
-
-        for i in range(training_iter):
-            # Zero gradients from previous iteration
-            optimizer.zero_grad()
-            # Output from model
-            output = self.model(x)
-            # Calc loss and backprop gradients
-            loss = -mll(output, y)
-            loss.backward()
-            # print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
-            #     i + 1, training_iter, loss.item(),
-            #     self.model.covar_module.base_kernel.lengthscale.mean().item(),
-            #     self.model.likelihood.noise.item()
-            # ))
-            optimizer.step()
-
-        self.model.eval()
-        self.model.requires_grad_(False)
-        self.likelihood.eval()
 
 
 
