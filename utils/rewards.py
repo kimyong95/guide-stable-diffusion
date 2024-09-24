@@ -131,7 +131,7 @@ class Gemini(RewardBase):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
         generation_config = genai.types.GenerationConfig(temperature=0.0)
-        tasks = [model.generate_content_async(contents, safety_settings=safety_settings, generation_config=generation_config) for contents in contents_list]
+        tasks = [model.generate_content_async(contents, safety_settings=safety_settings, generation_config=generation_config, request_options={"timeout": 300}) for contents in contents_list]
         responses = await asyncio.gather(*tasks)
         texts = [r.text.strip() for r in responses]
         return texts
@@ -186,7 +186,7 @@ class GeminiQuestion(RewardBase):
         }
 
         generation_config = genai.types.GenerationConfig(temperature=0.0)
-        tasks = [model.generate_content_async(contents, safety_settings=safety_settings, generation_config=generation_config) for contents in contents_list]
+        tasks = [model.generate_content_async(contents, safety_settings=safety_settings, generation_config=generation_config, request_options={"timeout": 300}) for contents in contents_list]
         responses = await asyncio.gather(*tasks)
         texts = [r.text.strip() for r in responses]
         return texts

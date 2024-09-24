@@ -10,7 +10,6 @@ import lightning
 import PIL
 import matplotlib.pyplot as plt
 from torchmetrics.image import StructuralSimilarityIndexMeasure
-from models.diffusion_base import DiffusionBase
 
 from utils.utils import FunctionCallTracker, disable_train
 from diffusers import UNet2DModel
@@ -19,7 +18,7 @@ from models.diffusion_base import find_closest_factors
 from palettable.colorbrewer.qualitative import Dark2_4
 colors = Dark2_4.mpl_colors
 
-from models.guidance_models import GpGuidanceModel, NnGuidanceModel
+from models.guidance_models import GpGuidanceModel, NnGuidanceModel, SelectBestModel
 from models.finetune_with_model import FinetuneDiffusionWithModel
 from models.targetdiff_base import TargetdiffBase
 import asyncio
@@ -39,14 +38,18 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
         data_x = torch.empty(0, self.num_atoms * self.dim)
         data_y = torch.empty(0)
 
-        if guidance_model.startswith("gp"):
-            kernel = guidance_model.split("-")[1] if len(guidance_model.split("-")) == 2 else "rbf"
-            self.guidance_model = GpGuidanceModel(self.num_atoms * self.dim, kernel=kernel)
+        self.guidance_model_type = guidance_model
+
+        if guidance_model == "gp":
+            self.guidance_model = GpGuidanceModel(self.num_atoms * self.dim, noise_level=1, kernel="rbf")
+            self.guidance_model._x_flatten = self._x_flatten
+            self.guidance_model._x_unflatten = self._x_unflatten
+        elif guidance_model == "best":
+            self.guidance_model = SelectBestModel()
+            self.guidance_model._x_flatten = self._x_flatten
+            self.guidance_model._x_unflatten = self._x_unflatten
         else:
             raise NotImplementedError()
-
-        self.guidance_model._x_flatten = self._x_flatten
-        self.guidance_model._x_unflatten = self._x_unflatten
 
         self.register_buffer("data_x", data_x)
         self.register_buffer("data_y", data_y)
@@ -71,7 +74,8 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
 
         pred_pos_tensor = torch.from_numpy(np.array(pred_pos)).to(self.device).type(torch.float32)
         self.add_data(self._x_flatten(pred_pos_tensor), scores)
-        # self.guidance_model.update_model_data(self.data_x, self.data_y)
+
+        self.guidance_model.update_model_data(self.data_x, self.data_y)
 
         self.log_score(scores, stage="train")
         self.log(f"train/failed_rate", float(failed_count) / batch_size)
@@ -93,13 +97,9 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
 
             pred_pos_tensor = torch.from_numpy(np.array(pred_pos)).to(self.device).type(torch.float32)
             
-            # pred_y, derivative_y = self.guidance_model.derivative_y_wrt_x(pred_pos_tensor_star)
-            # pred_pos_tensor_star = pred_pos_tensor_star - self.guidance_model_beta * derivative_y
-
-            if len(self.data_x) > 0:
-                best_id = self.data_y.argmin()
-                pred_pos_tensor_star = self._x_unflatten(self.data_x[best_id])
-                epsilon += self.alpha * (pred_pos_tensor_star - pred_pos_tensor)[None,:,:,:]
+            pred_y, derivative_y = self.guidance_model.derivative_y_wrt_x(pred_pos_tensor)
+            pred_pos_tensor_star = pred_pos_tensor - derivative_y
+            epsilon += self.alpha * (pred_pos_tensor_star - pred_pos_tensor)
 
             if self.reg_mode == "projection":
                 epsilon_norm = self._x_flatten(epsilon).norm(dim=-1)[:,:,None,None]

@@ -25,16 +25,15 @@ data:
 model:
   class_path: models.finetune_targetdiff_with_model.FinetuneTargetdiffWithModel
   init_args:
-    guidance_model: "gp"
+    guidance_model: "best"
+    alpha: 0.1 # guidance step
     training_batch_size: 32
     validation_batch_size: 16
-    alpha: 0.05 # guidance step
     pos_only: True
     reg_mode: "projection"
     reg: 1e-3
     data_id: 0
     scheduler: "finetune-eular"
-    vina_web_url: None
-    vina_web_url: https://foydiwfg7gjyejxzapwso5czuu0jzxwt.lambda-url.us-east-2.on.aws
-    # vina_web_url: https://qylhug6f6qwh7xbs5zsewfzwi40hktit.lambda-url.ap-southeast-1.on.aws
+    # vina_web_url: https://foydiwfg7gjyejxzapwso5czuu0jzxwt.lambda-url.us-east-2.on.aws
+    vina_web_url: https://qylhug6f6qwh7xbs5zsewfzwi40hktit.lambda-url.ap-southeast-1.on.aws
     

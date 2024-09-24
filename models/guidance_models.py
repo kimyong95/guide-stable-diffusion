@@ -22,10 +22,10 @@ class ExactGpModel(gpytorch.models.ExactGP):
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 class GpGuidanceModel(nn.Module):
-    def __init__(self, dimension, kernel="rbf") -> None:
+    def __init__(self, dimension, kernel="rbf", noise_level = 1e-4) -> None:
         super().__init__()
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
-        self.likelihood.noise = 1e-4
+        self.likelihood.noise = noise_level
         self.likelihood.eval()
 
         model = ExactGpModel(None, None, self.likelihood, x_dim=dimension, kernel=kernel)
@@ -85,6 +85,32 @@ class GpGuidanceModel(nn.Module):
         )
 
 
+class SelectBestModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self._x_flatten = None
+        self._x_unflatten = None
+
+        self.data_x = None
+        self.data_y = None
+    
+    def derivative_y_wrt_x(self, x):
+        
+        if self.data_x is not None:
+            optimal = self.data_y.min()
+            optimal_id = self.data_y.argmin()
+            optimal_x = self._x_unflatten(self.data_x[optimal_id])
+            grad = x - optimal_x
+        else:
+            optimal = torch.zeros(x.shape[0], device=x.device)
+            grad = torch.zeros_like(x)
+
+        return optimal, grad
+
+    def update_model_data(self, x, y):
+        self.data_x = x
+        self.data_y = y
 
 from torch import nn
 import torch.nn.functional as F
