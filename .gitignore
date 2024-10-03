@@ -3,4 +3,12 @@ debug_logs/**/*
 data/**/*
 archives/**/*
 tests/**/*
-__pycache__/**/*
+onediff_cache
+test*
+__pycache__
+logs/**/*
+related_works/d3po/logs/**/*
+tmp/**/*
+oneflow*
+results/**/*
+results-molecules/**/*
