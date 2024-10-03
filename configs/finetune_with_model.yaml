@@ -32,10 +32,10 @@ model:
     alpha: 80 # guidance step
     reg_mode: "projection"
     reg: 1e-3
-    generate_prompt: "A dog riding on a bear."
-    reward_target_prompt: "A dog riding on a bear."
+    generate_prompt: "A yellow reindeer and a blue elephant."
+    reward_target_prompt: "A yellow reindeer and a blue elephant."
     reward_func: "gemini-question"
-    reward_query_prompt: "Describe this image concisely in one scentence."
+    reward_query_prompt: null
 
 # base_lr=50
 

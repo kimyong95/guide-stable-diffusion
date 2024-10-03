@@ -1,6 +1,3 @@
-[submodule "related_works/SEIKO"]
-	path = related_works/SEIKO
-	url = https://github.com/kimyong95/SEIKO.git
 [submodule "related_works/d3po"]
 	path = related_works/d3po
 	url = https://github.com/kimyong95/d3po.git

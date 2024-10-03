@@ -166,7 +166,7 @@ class TargetdiffBase(LightningBase):
         mol = self.reconstruct_molecule(pos, v)
         if mol is not None:
             vina_task = VinaDockingTask.from_generated_mol(mol, self.data.ligand_filename, protein_root=self.resolve_relative_dir("data/test_set"), web_dock_url=self.vina_web_url)
-            score = (await vina_task.run(mode='minimize', exhaustiveness=16))[0]["affinity"] / MAX_VINA_SCORE
+            score = (await vina_task.run(mode='score_only', exhaustiveness=16))[0]["affinity"] / MAX_VINA_SCORE
             score = score if score < 0.0 else 0.0
         failed = bool(mol is None)
 

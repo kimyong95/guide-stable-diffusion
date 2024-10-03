@@ -5,25 +5,6 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Finetune",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "main.py",
-            "console": "integratedTerminal",
-            "justMyCode": false,
-            "env": {
-                "CUDA_VISIBLE_DEVICES": "1",
-                "PYTHONPATH": "${workspaceFolder}",
-            },
-            "cwd": "${workspaceFolder}",
-            "args": [
-                "fit",
-                "--config", "configs/finetune.yaml",
-                "--config", "configs/debug.yaml",
-                "--model.init_args.training_batch_size", "4",
-            ]
-        },
-        {
             "name": "Finetune with Model",
             "type": "debugpy",
             "request": "launch",
@@ -31,7 +12,7 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "env": {
-                "CUDA_VISIBLE_DEVICES": "1",
+                "CUDA_VISIBLE_DEVICES": "0",
                 "PYTHONPATH": "${workspaceFolder}",
             },
             "cwd": "${workspaceFolder}",
@@ -39,25 +20,99 @@
                 "fit",
                 "--config", "configs/finetune_with_model.yaml",
                 "--config", "configs/debug.yaml",
-                "--model.init_args.training_batch_size", "16",
             ]
         },
         {
-            "name": "LLaVA Server",
+            "name": "Finetune Targetdiff with Model",
             "type": "debugpy",
             "request": "launch",
-            "module": "uvicorn",
+            "program": "main.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "env": {
-                "CUDA_VISIBLE_DEVICES": "3",
-                "PYTHONPATH": "${workspaceFolder}",
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}:related_works/targetdiff",
             },
             "cwd": "${workspaceFolder}",
             "args": [
-                "utils.llava_server:app",
-                "--timeout-keep-alive", "600",
-                "--log-level", "debug",
+                "fit",
+                "--config", "configs/finetune_targetdiff_with_model.yaml",
+                "--config", "configs/debug.yaml",
+                "--model.init_args.validation_batch_size=8",
+                "--model.init_args.data_id=0",
+            ]
+        },
+        {
+            "name": "Targetdiff (Sampling)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/sample_diffusion.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/related_works/targetdiff",
+            },
+            "cwd": "${workspaceFolder}/related_works/targetdiff",
+            "args": [
+                "configs/sampling.yml",
+                "--data_id", "1",
+                "--batch_size", "32",
+            ]
+        },
+        {
+            "name": "Targetdiff (Evaluation)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/evaluate_diffusion.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/related_works/targetdiff",
+            },
+            "cwd": "${workspaceFolder}/related_works/targetdiff",
+            "args": [
+                "./outputs",
+                "--docking_mode", "vina_score",
+                "--protein_root", "data/test_set",
+            ]
+        },
+        {
+            "name": "DDPO",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/rm/train_ddpo.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": ".:../../.:../../related_works/targetdiff",
+            },
+            "cwd": "${workspaceFolder}/related_works/d3po",
+            "args": [
+                "--config.wandb_mode=disabled",
+            ]
+        },
+        {
+            "name": "DDPO Targetdiff",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/rm/train_d3po_targetdiff.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": ".:../../.:../../related_works/targetdiff",
+            },
+            "cwd": "${workspaceFolder}/related_works/d3po",
+            "args": [
+                "--config", "config/base_targetdiff.py",
+                "--config.sample.batch_size=4", "--config.train.batch_size=2",
+                // "--config.wandb_mode=disabled",
+                "--config.data_id=0",
+                "--config.train.learning_rate=1e-3",
+                
             ]
         },
         {
@@ -68,10 +123,10 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "env": {
-                "CUDA_VISIBLE_DEVICES": "1",
-                "PYTHONPATH": "${workspaceFolder}",
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}:related_works/targetdiff",
             },
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
         }
     ]
 }
