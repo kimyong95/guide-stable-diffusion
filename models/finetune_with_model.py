@@ -174,7 +174,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         ############################ save final text ############################
         if texts is not None and scores is not None:
-            with open(f"{path}/llava.txt", "w") as f:
+            with open(f"{path}/response.txt", "w") as f:
                 for score, text in zip(scores, texts):
                     text = text.replace('\n', '').strip()
                     f.write(f"Score: {score.item():.2f}, Text: {text}\n")

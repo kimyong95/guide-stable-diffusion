@@ -36,12 +36,3 @@ model:
     reward_target_prompt: "A yellow reindeer and a blue elephant."
     reward_func: "gemini-question"
     reward_query_prompt: null
-
-# base_lr=50
-
-# sd2: alpha=1
-# sdxl: alpha=2
-# gpt/gemini: beta=1
-# llava: beta=2
-
-# lr = base_lr * alpha * beta

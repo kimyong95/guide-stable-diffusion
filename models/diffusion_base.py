@@ -19,16 +19,13 @@ from safetensors.torch import load_file
 
 from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneStableDiffusion3Pipeline, FinetuneFlowMatchEulerDiscreteScheduler
 from utils.finetune_difussers import FinetuneEulerDiscreteScheduler, FinetuneStableDiffusionXLPipeline
-from utils.rewards import LLaVA, Gpt, Gemini, GeminiQuestion
+from utils.rewards import GeminiQuestion
 from utils.utils import find_closest_factors, disable_train
 
 from onediff.infer_compiler import oneflow_compile
 # from DeepCache import DeepCacheSDHelper
 
 REWAED_FUNC = {
-    "llava": LLaVA,
-    "gpt": Gpt,
-    "gemini": Gemini,
     "gemini-question": GeminiQuestion
 }
 
@@ -42,6 +39,13 @@ class DiffusionBase(LightningBase):
             self.num_sampling_steps = 50
             self.guidance_scale = 7.0
             model_id = "stabilityai/stable-diffusion-2-1-base"
+            scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+            self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            self.pipe.enable_vae_slicing()
+        elif sd_model == "sd2-turbo":
+            self.num_sampling_steps = 4
+            self.guidance_scale = 0.0
+            model_id = "stabilityai/sd-turbo"
             scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
             self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
