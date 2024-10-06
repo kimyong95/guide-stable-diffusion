@@ -1,9 +1,6 @@
 [submodule "related_works/d3po"]
 	path = related_works/d3po
 	url = https://github.com/kimyong95/d3po.git
-[submodule "related_works/svdd"]
-	path = related_works/svdd
-	url = https://github.com/kimyong95/SVDD.git
-[submodule "related_works/svdd-image"]
-	path = related_works/svdd-image
-	url = https://github.com/kimyong95/SVDD-image.git
+[submodule "related_works/targetdiff"]
+	path = related_works/targetdiff
+	url = https://github.com/kimyong95/targetdiff.git
