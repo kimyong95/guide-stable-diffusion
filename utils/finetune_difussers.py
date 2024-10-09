@@ -25,13 +25,39 @@ from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
 class FinetuneFlowMatchEulerDiscreteScheduler(FlowMatchEulerDiscreteScheduler):
 
     ######################### copy from parent #########################
+    def set_timesteps(
+        self,
+        num_inference_steps: int = None,
+        device: Union[str, torch.device] = None,
+        sigmas: Optional[List[float]] = None,
+        mu: Optional[float] = None,
+        # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
+        timesteps: Optional[List[int]] = None,
+        # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
+    ):
+        if timesteps is not None:
+            # t to sigmas
+            assert sigmas is None
+            sigmas = timesteps / self.config.num_train_timesteps
+            sigmas = sigmas / ( self.config.shift - (sigmas * (self.config.shift-1)) )
+        super().set_timesteps(
+            num_inference_steps=num_inference_steps,
+            device=device,
+            sigmas=sigmas,
+            mu=mu
+        )
+        
+    ######################### copy from parent #########################
+        
+
+    ######################### copy from parent #########################
     def step(
         self,
         model_output: torch.FloatTensor,
         timestep: Union[float, torch.FloatTensor],
         sample: torch.FloatTensor,
         # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
-        s_churn: float = 0.1,
+        s_churn: float = 0.01,
         given_noise: Optional[torch.FloatTensor] = None,
         # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
         s_tmin: float = 0.0,
@@ -101,7 +127,7 @@ class FinetuneFlowMatchEulerDiscreteScheduler(FlowMatchEulerDiscreteScheduler):
 class FinetuneStableDiffusion3Pipeline(StableDiffusion3Pipeline):
 
     ######################### copy from parent #########################
-    @torch.inference_mode() # <--- edited
+    @torch.no_grad()
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
         self,
@@ -132,6 +158,7 @@ class FinetuneStableDiffusion3Pipeline(StableDiffusion3Pipeline):
         max_sequence_length: int = 256,
         # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
         given_noise: Optional[torch.FloatTensor] = None,
+        s_churn: float = 0.01,
         # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
     ):
         r"""
@@ -334,8 +361,8 @@ class FinetuneStableDiffusion3Pipeline(StableDiffusion3Pipeline):
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
-                given_noise_i = given_noise[i] if given_noise is not None else None
-                latents = self.scheduler.step(noise_pred, t, latents, return_dict=False, given_noise=given_noise_i)[0]
+                given_noise_i = given_noise[i].type(prompt_embeds.dtype) if given_noise is not None else None
+                latents = self.scheduler.step(noise_pred, t, latents, return_dict=False, given_noise=given_noise_i, s_churn=s_churn)[0]
 
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
@@ -874,6 +901,8 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
         given_noise: torch.FloatTensor = None,
         s_churn: float = 0.01,
+        start_at_i: int = 0,
+        start_at_i_latents: torch.FloatTensor = None,
         # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
         **kwargs,
     ):
@@ -1205,6 +1234,14 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             for i, t in enumerate(timesteps):
                 if self.interrupt:
                     continue
+                
+                # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
+                if i < start_at_i:
+                    progress_bar.update()
+                    continue
+                if i == start_at_i and start_at_i_latents is not None:
+                    latents = start_at_i_latents.type(prompt_embeds.dtype)
+                # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
 
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents

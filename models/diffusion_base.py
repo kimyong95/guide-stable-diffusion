@@ -42,6 +42,7 @@ class DiffusionBase(LightningBase):
             scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
             self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
+            self.pipe_model = self.pipe.unet
         elif sd_model == "sd2-turbo":
             self.num_sampling_steps = 4
             self.guidance_scale = 0.0
@@ -49,6 +50,7 @@ class DiffusionBase(LightningBase):
             scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
             self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
+            self.pipe_model = self.pipe.unet
         elif sd_model == "sdxl":
             self.num_sampling_steps = 50
             self.guidance_scale = 7.0
@@ -58,6 +60,7 @@ class DiffusionBase(LightningBase):
             self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
+            self.pipe_model = self.pipe.unet
         elif sd_model == "sdxl-lightning":
             self.num_sampling_steps = 8
             self.guidance_scale = 0.0
@@ -69,14 +72,23 @@ class DiffusionBase(LightningBase):
             self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, unet=unet, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
-            
+            self.pipe_model = self.pipe.unet
+        elif sd_model == "sd3":
+            self.num_sampling_steps = 28
+            self.guidance_scale = 7.0
+            model_id = "stabilityai/stable-diffusion-3-medium-diffusers"
+            scheduler = FinetuneFlowMatchEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+            self.pipe = FinetuneStableDiffusion3Pipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            self.pipe.vae.enable_slicing()
+            self.pipe.vae.encoder = None
+            self.pipe_model = self.pipe.transformer
                     
         for k, c in self.pipe.components.items():
             if isinstance(c, torch.nn.Module):
                 self.pipe.components[k] = disable_train(c)
 
-        self.sample_size = self.pipe.unet.config.sample_size
-        self.channels = self.pipe.unet.config.in_channels
+        self.sample_size = self.pipe_model.config.sample_size
+        self.channels = self.pipe_model.config.in_channels
         
         self.generate_prompt = generate_prompt
         self.reward_query_prompt = reward_query_prompt
@@ -97,14 +109,14 @@ class DiffusionBase(LightningBase):
         return self
 
     def compile(self):
-        self.pipe.unet = oneflow_compile(self.pipe.unet)
+        self.pipe_model = oneflow_compile(self.pipe_model)
         cache_path = f"onediff_cache/{self.sd_model}"
         try:
-            self.pipe.unet.load_graph(cache_path, device=str(self.device))
+            self.pipe_model.load_graph(cache_path, device=str(self.device))
         except ValueError:
             os.makedirs("onediff_cache", exist_ok=True)
             self.pipe(prompt=["hello world"], num_inference_steps=self.num_sampling_steps).images
-            self.pipe.unet.save_graph(cache_path)
+            self.pipe_model.save_graph(cache_path)
 
     def latents_to_images(self, latents):
 

@@ -1,0 +1,218 @@
+
+import torch
+import numpy as np
+import einops
+import os
+import math
+from models.base import LightningBase
+from tqdm import tqdm
+import torchvision
+import lightning
+import PIL
+import matplotlib.pyplot as plt
+from torchmetrics.image import StructuralSimilarityIndexMeasure
+from models.diffusion_base import DiffusionBase
+from botorch.fit import fit_gpytorch_mll
+
+from utils.utils import FunctionCallTracker, disable_train
+from diffusers import UNet2DModel
+import gpytorch
+from models.diffusion_base import find_closest_factors
+from palettable.colorbrewer.qualitative import Dark2_4
+colors = Dark2_4.mpl_colors
+
+from models.guidance_models import GpGuidanceModel, NnGuidanceModel
+
+class FinetuneDiffusionWithOptimization(DiffusionBase):
+
+    def __init__(self, lr, traj_reward, training_batch_size, validation_batch_size, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
+        super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
+
+        self.lr = lr
+        self.traj_reward = traj_reward
+        self.training_batch_size = training_batch_size
+        self.validation_batch_size = validation_batch_size
+
+        mu = torch.zeros(self.num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
+        self.register_buffer('mu', mu)
+        sigma = torch.ones(self.num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
+        self.register_buffer('sigma', sigma) # entries is variance
+
+        # dummy parameters for pytorch lightning optimizer to work
+        self.dummy = torch.nn.Parameter(torch.zeros(1))
+        self.automatic_optimization = False
+
+    def get_noise(self, batch_size, generator=None):
+        batch_mu = einops.repeat(self.mu, 'T D -> T B D', B=batch_size)
+
+        batch_sigma = einops.repeat(self.sigma, 'T D -> T B D', B=batch_size)
+
+        batch_noise = batch_mu + batch_sigma**0.5 * torch.randn(batch_mu.size(), device=self.device, generator=generator)
+
+        batch_noise = self._x_unflatten(batch_noise)
+
+        return batch_noise
+
+    def update_parameters(self, z, scores):
+        ''' minimize score '''
+
+        # z: (T, B, D)
+        # scores: (T, B)
+
+        assert z.shape[0] == scores.shape[0] == self.mu.shape[0] == self.sigma.shape[0]
+        assert z.shape[1] == scores.shape[1]
+
+        T_dim = z.shape[0]
+        B_dim = z.shape[1]
+        D_dim = self.mu.shape[1]
+
+        for t in range(T_dim):
+            
+            scores_t = scores[t:].mean(0)
+            # min max normalize score to [0,1]
+            min_score = scores_t.min()
+            max_score = scores_t.max()
+            if min_score != max_score:
+                h = (scores_t - min_score) / (max_score - min_score)
+            else:
+                h = (scores_t - min_score)
+
+            _beta = self.lr
+            self.sigma[t] = 1 / (
+                
+                1/self.sigma[t] + _beta / D_dim * (
+                    (1/self.sigma[t])[None,:] * (z[t] - self.mu[t,None,:]) * (z[t] - self.mu[t,None,:]) * (1/self.sigma[t])[None,:] * \
+                    
+                    h[:,None]
+
+                # mean over N
+                ).mean(0)
+            )
+            
+            self.mu[t] = self.mu[t] - _beta / math.sqrt(D_dim) * (
+
+                (z[t] - self.mu[t][None,:]) * \
+                
+                h[:,None]
+            
+            # mean over N
+            ).mean(0)
+    
+    @torch.no_grad()
+    def training_step(self, _, __):
+
+        batch_size = self.training_batch_size
+        
+        epsilon = self.get_noise(batch_size)
+
+        prior = epsilon[0]
+        given_noise = epsilon[1:]
+        
+        # collect latents trajectory
+        latents_trajectory = [prior]
+        def callback_func(self, index, timestep, callback_kwargs):
+            latent = callback_kwargs["latents"]
+            latents_trajectory.append(latent)
+            return {}
+
+        images = self.pipe(
+            [self.generate_prompt]*batch_size,
+            latents=prior.type(torch.float16),
+            output_type="pil",
+            given_noise=given_noise,
+            num_inference_steps=self.num_sampling_steps,
+            guidance_scale=self.guidance_scale,
+            callback_on_step_end=callback_func,
+        ).images
+
+        images_trajectory = []
+
+        # xt -> xT, for t=[0,...,T-1]
+        for i, latents_i in enumerate(latents_trajectory[:-1]):
+            images_t = self.pipe(
+                [self.generate_prompt]*batch_size,
+                latents=prior.type(torch.float16), # will be replaced by start_at_i_latents if i > 0
+                output_type="pil",
+                start_at_i=i,
+                start_at_i_latents=latents_i if i > 0 else None,
+                num_inference_steps=self.num_sampling_steps,
+                guidance_scale=self.guidance_scale,
+                s_churn=0.0,
+            ).images
+
+            images_trajectory.append(images_t)
+        
+        images_trajectory.append(images)
+
+        images_flatten = sum(images_trajectory, [])
+
+        self.log_images(images_trajectory[-1], stage="train")
+        scores_flatten, texts = self.get_scores(images_flatten)
+
+        texts = [texts[t * batch_size : (t + 1) * batch_size] for t in range(self.num_sampling_steps + 1)]
+
+        scores = einops.rearrange(scores_flatten, '(T B) -> T B', T=self.num_sampling_steps+1, B=batch_size)
+
+        self.update_parameters(self._x_flatten(epsilon), scores)
+
+        self.log_score(scores[-1], stage="train")
+        self.log_params(self.mu)
+        self.log_ablation(images_list=images_trajectory, texts=texts[-1], scores=scores[-1], stage="train")
+
+    def log_ablation(self, images_list=None, texts=None, scores=None, stage="train"):
+        path = str(self.trainer.logger.experiment.dir).removesuffix("/files") + f"/ablation/{stage}/{self.current_epoch}"
+        os.makedirs(path, exist_ok=True)
+
+        ############################ save traj images ############################
+        if images_list is not None:
+            for l, images in enumerate(images_list):
+                images_tensors = torch.stack([torchvision.transforms.ToTensor()(image) for image in images])
+                grid_image = torchvision.utils.make_grid(images_tensors, nrow=find_closest_factors(len(images_tensors)))
+                torchvision.utils.save_image(grid_image, f"{path}/l={l}.jpg", format='jpeg')
+        ############################ save traj images ############################
+
+        ############################ save final text ############################
+        if texts is not None and scores is not None:
+            with open(f"{path}/response.txt", "w") as f:
+                for score, text in zip(scores, texts):
+                    text = text.replace('\n', '').strip()
+                    f.write(f"Score: {score.item():.2f}, Text: {text}\n")
+        ############################ save final text ############################
+
+    def log_params(self, mu):
+        self.log(f"||mu||_2", mu.norm())
+
+    def test_step(self, _, __):
+        return
+
+    @torch.no_grad()
+    def validation_step(self, _, __):
+    
+        batch_size = self.validation_batch_size
+
+        generator = torch.Generator(device=self.device).manual_seed(1)
+        
+        epsilon = self.get_noise(batch_size, generator=generator)
+
+        prior = epsilon[0]
+        given_noise = epsilon[1:]
+
+        images = self.pipe(
+            [self.generate_prompt]*batch_size,
+            latents=prior.type(torch.float16),
+            output_type="pil",
+            given_noise=given_noise,
+            num_inference_steps=self.num_sampling_steps,
+            guidance_scale=self.guidance_scale,
+            s_churn=0.0,
+        ).images
+        
+        self.log_images(images, stage="validation")
+
+        scores, texts = self.get_scores(images)        
+        self.log_score(scores, stage="validation")
+
+        self.log_ablation(images_list=None, texts=texts, scores=scores, stage="train")
+
+    def configure_optimizers(self):
+        return torch.optim.Adam([self.dummy], lr=0.)
