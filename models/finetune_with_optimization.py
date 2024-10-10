@@ -115,7 +115,7 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
             latents_trajectory.append(latent)
             return {}
 
-        images = self.pipe(
+        images_final = self.pipe(
             [self.generate_prompt]*batch_size,
             latents=prior.type(torch.float16),
             output_type="pil",
@@ -126,10 +126,12 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         ).images
 
         images_trajectory = []
+        texts_trajectory = []
+        scores_trajectory = []
 
         # xt -> xT, for t=[0,...,T-1]
         for i, latents_i in enumerate(latents_trajectory[:-1]):
-            images_t = self.pipe(
+            images_i = self.pipe(
                 [self.generate_prompt]*batch_size,
                 latents=prior.type(torch.float16), # will be replaced by start_at_i_latents if i > 0
                 output_type="pil",
@@ -140,24 +142,25 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
                 s_churn=0.0,
             ).images
 
-            images_trajectory.append(images_t)
-        
-        images_trajectory.append(images)
+            scores_i, texts_i = self.get_scores(images_i)
 
-        images_flatten = sum(images_trajectory, [])
+            images_trajectory.append(images_i)
+            scores_trajectory.append(scores_i)
+            texts_trajectory.append(texts_i)
+        
+        scores_final, texts_final = self.get_scores(images_final)
+
+        images_trajectory.append(images_final)
+        scores_trajectory.append(scores_final)
+        texts_trajectory.append(texts_final)
 
         self.log_images(images_trajectory[-1], stage="train")
-        scores_flatten, texts = self.get_scores(images_flatten)
 
-        texts = [texts[t * batch_size : (t + 1) * batch_size] for t in range(self.num_sampling_steps + 1)]
+        self.update_parameters(self._x_flatten(epsilon), torch.stack(scores_trajectory))
 
-        scores = einops.rearrange(scores_flatten, '(T B) -> T B', T=self.num_sampling_steps+1, B=batch_size)
-
-        self.update_parameters(self._x_flatten(epsilon), scores)
-
-        self.log_score(scores[-1], stage="train")
+        self.log_score(scores_trajectory[-1], stage="train")
         self.log_params(self.mu)
-        self.log_ablation(images_list=images_trajectory, texts=texts[-1], scores=scores[-1], stage="train")
+        self.log_ablation(images_list=images_trajectory, texts=texts_trajectory[-1], scores=scores_trajectory[-1], stage="train")
 
     def log_ablation(self, images_list=None, texts=None, scores=None, stage="train"):
         path = str(self.trainer.logger.experiment.dir).removesuffix("/files") + f"/ablation/{stage}/{self.current_epoch}"

@@ -29,8 +29,7 @@ model:
     lr: 50
     training_batch_size: 32
     validation_batch_size: 16
-    generate_prompt: "A dog wearing a watch on his hand, riding on a skateboard, flying on the blue sky."
-    reward_target_prompt: "A dog wearing a watch on his hand, riding on a skateboard, flying on the blue sky."
+    generate_prompt: "A yellow reindeer and a blue elephant."
+    reward_target_prompt: "A yellow reindeer and a blue elephant."
     reward_func: "gemini-question"
     reward_query_prompt: null
-    traj_reward: False
