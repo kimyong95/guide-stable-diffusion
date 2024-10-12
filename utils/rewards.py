@@ -46,7 +46,7 @@ class GeminiQuestion(RewardBase):
         return embedding
 
     @staticmethod
-    @retry(times=3, exceptions=(InternalServerError,))
+    @retry(times=10, exceptions=(InternalServerError,))
     async def generate_content_async(contents_list):
         model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         safety_settings = {

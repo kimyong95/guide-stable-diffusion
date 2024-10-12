@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 from models.diffusion_base import DiffusionBase
 from botorch.fit import fit_gpytorch_mll
-
+import bisect
 from utils.utils import FunctionCallTracker, disable_train
 from diffusers import UNet2DModel
 import gpytorch
@@ -25,11 +25,10 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class FinetuneDiffusionWithOptimization(DiffusionBase):
 
-    def __init__(self, lr, traj_reward, training_batch_size, validation_batch_size, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
+    def __init__(self, lr, training_batch_size, validation_batch_size, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
         super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
 
         self.lr = lr
-        self.traj_reward = traj_reward
         self.training_batch_size = training_batch_size
         self.validation_batch_size = validation_batch_size
 
@@ -37,6 +36,8 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         self.register_buffer('mu', mu)
         sigma = torch.ones(self.num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
         self.register_buffer('sigma', sigma) # entries is variance
+
+
 
         # dummy parameters for pytorch lightning optimizer to work
         self.dummy = torch.nn.Parameter(torch.zeros(1))
@@ -125,44 +126,53 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
             callback_on_step_end=callback_func,
         ).images
 
-        images_trajectory = []
         texts_trajectory = []
-        scores_trajectory = []
+        images_trajectory = []
 
-        # xt -> xT, for t=[0,...,T-1]
-        for i, latents_i in enumerate(latents_trajectory[:-1]):
+        scores = torch.zeros((self.num_sampling_steps+1, batch_size), device=self.device)
+
+        # xt -> xT
+        rewards_index = list(self.reward_target_prompt.keys())
+        interminiate_rewards_index = list(set(rewards_index) - {self.num_sampling_steps})
+        for i in interminiate_rewards_index:
             images_i = self.pipe(
                 [self.generate_prompt]*batch_size,
-                latents=prior.type(torch.float16), # will be replaced by start_at_i_latents if i > 0
                 output_type="pil",
                 start_at_i=i,
-                start_at_i_latents=latents_i if i > 0 else None,
+                start_at_i_latents=latents_trajectory[i],
                 num_inference_steps=self.num_sampling_steps,
                 guidance_scale=self.guidance_scale,
                 s_churn=0.0,
             ).images
 
-            scores_i, texts_i = self.get_scores(images_i)
+            scores_i, texts_i = self.get_scores(images_i, i)
+
+            scores[i] = scores_i
 
             images_trajectory.append(images_i)
-            scores_trajectory.append(scores_i)
             texts_trajectory.append(texts_i)
         
         scores_final, texts_final = self.get_scores(images_final)
+        scores[-1] = scores_final
+
+        # fill scores by future timestep
+        for i in range(self.num_sampling_steps):
+            if i not in rewards_index:
+                next_i = rewards_index[bisect.bisect_right(rewards_index,i)]
+                scores[i] = scores[next_i]
 
         images_trajectory.append(images_final)
-        scores_trajectory.append(scores_final)
         texts_trajectory.append(texts_final)
 
         self.log_images(images_trajectory[-1], stage="train")
 
-        self.update_parameters(self._x_flatten(epsilon), torch.stack(scores_trajectory))
+        self.update_parameters(self._x_flatten(epsilon), scores)
 
-        self.log_score(scores_trajectory[-1], stage="train")
+        self.log_score(scores[-1], stage="train")
         self.log_params(self.mu)
-        self.log_ablation(images_list=images_trajectory, texts=texts_trajectory[-1], scores=scores_trajectory[-1], stage="train")
+        self.log_ablation(images_list=images_trajectory, texts_list=texts_trajectory, scores_list=scores[rewards_index], stage="train")
 
-    def log_ablation(self, images_list=None, texts=None, scores=None, stage="train"):
+    def log_ablation(self, images_list=None, texts_list=None, scores_list=None, stage="train"):
         path = str(self.trainer.logger.experiment.dir).removesuffix("/files") + f"/ablation/{stage}/{self.current_epoch}"
         os.makedirs(path, exist_ok=True)
 
@@ -175,11 +185,12 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         ############################ save traj images ############################
 
         ############################ save final text ############################
-        if texts is not None and scores is not None:
-            with open(f"{path}/response.txt", "w") as f:
-                for score, text in zip(scores, texts):
-                    text = text.replace('\n', '').strip()
-                    f.write(f"Score: {score.item():.2f}, Text: {text}\n")
+        if texts_list is not None and scores_list is not None:
+            for l, (texts, scores) in enumerate(zip(texts_list, scores_list)):
+                with open(f"{path}/response_l={l}.txt", "w") as f:
+                    for score, text in zip(scores, texts):
+                        text = text.replace('\n', '').strip()
+                        f.write(f"Score: {score.item():.2f}, Text: {text}\n")
         ############################ save final text ############################
 
     def log_params(self, mu):
@@ -212,10 +223,10 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         
         self.log_images(images, stage="validation")
 
-        scores, texts = self.get_scores(images)        
+        scores, texts = self.get_scores(images)
         self.log_score(scores, stage="validation")
 
-        self.log_ablation(images_list=None, texts=texts, scores=scores, stage="train")
+        self.log_ablation(images_list=None, texts_list=[texts], scores_list=[scores], stage="train")
 
     def configure_optimizers(self):
         return torch.optim.Adam([self.dummy], lr=0.)

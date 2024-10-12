@@ -30,6 +30,7 @@ model:
     training_batch_size: 32
     validation_batch_size: 16
     generate_prompt: "A yellow reindeer and a blue elephant."
-    reward_target_prompt: "A yellow reindeer and a blue elephant."
+    reward_target_prompt: 
+      1.0: "A yellow reindeer and a blue elephant."
     reward_func: "gemini-question"
     reward_query_prompt: null

@@ -92,7 +92,8 @@ class DiffusionBase(LightningBase):
         
         self.generate_prompt = generate_prompt
         self.reward_query_prompt = reward_query_prompt
-        self.reward_target_prompt = reward_target_prompt
+
+        self.reward_target_prompt = { int(k * self.num_sampling_steps): v for k, v in reward_target_prompt.items()}
 
         assert reward_func in REWAED_FUNC
         self.reward_func = REWAED_FUNC[reward_func]()
@@ -134,9 +135,13 @@ class DiffusionBase(LightningBase):
     # maximize reward
     # minimize scores
     # input: PIL images
-    def get_scores(self, images):
+    def get_scores(self, images, index=None):
 
-        scores, outputs = self.reward_func(images, self.reward_target_prompt, self.reward_query_prompt)
+        if index is None:
+            index = self.num_sampling_steps
+        reward_target_prompt = self.reward_target_prompt[index]
+
+        scores, outputs = self.reward_func(images, reward_target_prompt, self.reward_query_prompt)
         scores = - scores
 
         return scores, outputs
