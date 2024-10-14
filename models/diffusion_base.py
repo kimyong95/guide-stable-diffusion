@@ -92,8 +92,12 @@ class DiffusionBase(LightningBase):
         
         self.generate_prompt = generate_prompt
         self.reward_query_prompt = reward_query_prompt
-
-        self.reward_target_prompt = { int(k * self.num_sampling_steps): v for k, v in reward_target_prompt.items()}
+        
+        if type(reward_target_prompt) == str:
+            self.reward_target_prompt = { self.num_sampling_steps-1: reward_target_prompt }
+        elif type(reward_target_prompt) == dict:
+            self.reward_target_prompt = { int(k * (self.num_sampling_steps-1)): v for k, v in reward_target_prompt.items()}
+        
 
         assert reward_func in REWAED_FUNC
         self.reward_func = REWAED_FUNC[reward_func]()
@@ -138,7 +142,7 @@ class DiffusionBase(LightningBase):
     def get_scores(self, images, index=None):
 
         if index is None:
-            index = self.num_sampling_steps
+            index = self.num_sampling_steps-1
         reward_target_prompt = self.reward_target_prompt[index]
 
         scores, outputs = self.reward_func(images, reward_target_prompt, self.reward_query_prompt)

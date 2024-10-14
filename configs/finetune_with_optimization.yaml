@@ -25,12 +25,13 @@ data:
 model:
   class_path: models.finetune_with_optimization.FinetuneDiffusionWithOptimization
   init_args:
-    sd_model: sdxl-lightning
+    sd_model: sd3
     lr: 50
     training_batch_size: 32
     validation_batch_size: 16
-    generate_prompt: "A yellow reindeer and a blue elephant."
-    reward_target_prompt: 
-      1.0: "A yellow reindeer and a blue elephant."
+    generate_prompt: "A cybertic cat and a cybertic dog."
+    reward_target_prompt:
+      0.1: "A cat and a dog."
+      1.0: "A cybertic cat and a cybertic dog."
     reward_func: "gemini-question"
     reward_query_prompt: null
