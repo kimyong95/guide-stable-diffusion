@@ -25,28 +25,23 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class FinetuneDiffusionWithOptimization(DiffusionBase):
 
-    def __init__(self, lr, training_batch_size, validation_batch_size, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
+    def __init__(self, lr, training_batch_size, validation_batch_size, evaluate_intermidiate_steps, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
         super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
 
         self.lr = lr
         self.training_batch_size = training_batch_size
         self.validation_batch_size = validation_batch_size
+        self.evaluate_intermidiate_steps = evaluate_intermidiate_steps
 
-        mu = torch.zeros(self.num_sampling_steps, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
+        mu = torch.zeros(self.num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
         self.register_buffer('mu', mu)
-        sigma = torch.ones(self.num_sampling_steps, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
+        sigma = torch.ones(self.num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
         self.register_buffer('sigma', sigma) # entries is variance
-
-
 
         # dummy parameters for pytorch lightning optimizer to work
         self.dummy = torch.nn.Parameter(torch.zeros(1))
         self.automatic_optimization = False
 
-    def on_fit_start(self):
-        super().on_fit_start()
-
-        self.prior = torch.randn((self.training_batch_size, self.channels, self.sample_size, self.sample_size), device=self.device)
 
     def get_noise(self, batch_size, generator=None):
         batch_mu = einops.repeat(self.mu, 'T D -> T B D', B=batch_size)
@@ -111,10 +106,11 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         
         epsilon = self.get_noise(batch_size)
 
-        prior = self.prior[:batch_size]
+        prior = epsilon[0]
+        given_noise = epsilon[1:]
         
         # collect latents trajectory
-        latents_trajectory = []
+        latents_trajectory = [prior]
         def callback_func(self, index, timestep, callback_kwargs):
             latent = callback_kwargs["latents"]
             latents_trajectory.append(latent)
@@ -124,7 +120,7 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
             [self.generate_prompt]*batch_size,
             latents=prior.type(torch.float16),
             output_type="pil",
-            given_noise=epsilon,
+            given_noise=given_noise,
             num_inference_steps=self.num_sampling_steps,
             guidance_scale=self.guidance_scale,
             callback_on_step_end=callback_func,
@@ -133,16 +129,24 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         texts_trajectory = []
         images_trajectory = []
 
-        scores = torch.zeros((self.num_sampling_steps, batch_size), device=self.device)
+        scores = torch.zeros((self.num_sampling_steps+1, batch_size), device=self.device)
 
-        # xt -> xT
-        rewards_index = list(self.reward_target_prompt.keys())
-        interminiate_rewards_index = list(set(rewards_index) - {self.num_sampling_steps})
-        for i in interminiate_rewards_index:
+        if bool(self.evaluate_intermidiate_steps):
+            if type(self.evaluate_intermidiate_steps) == bool:
+                evaluation_steps = list(range(self.num_sampling_steps))
+            if type(self.evaluate_intermidiate_steps) == int:
+                evaluation_steps = list(range(0, self.num_sampling_steps, self.evaluate_intermidiate_steps))
+        else:
+            rewards_steps = list(self.reward_target_prompt.keys())
+            evaluation_steps = list(set(rewards_steps) - {self.num_sampling_steps})
+            evaluation_steps.sort()
+        
+        # xt -> xT, fot t in evaluation_steps
+        for i in evaluation_steps:
             images_i = self.pipe(
                 [self.generate_prompt]*batch_size,
                 output_type="pil",
-                start_at_i=i+1,
+                start_at_i=i,
                 start_at_i_latents=latents_trajectory[i] if i > 0 else None,
                 latents=prior.type(torch.float16),
                 num_inference_steps=self.num_sampling_steps,
@@ -154,16 +158,20 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
 
             scores[i] = scores_i
 
+            self.log(f"train/score_{i}_mean", scores_i.mean())
+
             images_trajectory.append(images_i)
             texts_trajectory.append(texts_i)
         
         scores_final, texts_final = self.get_scores(images_final)
         scores[-1] = scores_final
 
+        evaluated_steps = evaluation_steps + [self.num_sampling_steps]
+
         # fill scores by future timestep
-        for i in range(self.num_sampling_steps-1):
-            if i not in rewards_index:
-                next_i = rewards_index[bisect.bisect_right(rewards_index,i)]
+        for i in range(self.num_sampling_steps):
+            if i not in evaluated_steps:
+                next_i = evaluated_steps[bisect.bisect_right(evaluated_steps,i)]
                 scores[i] = scores[next_i]
 
         images_trajectory.append(images_final)
@@ -171,12 +179,12 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
 
         self.log_images(images_trajectory[-1], stage="train")
 
-        self.update_parameters(self._x_flatten(epsilon), scores)
-
         self.log_score(scores[-1], stage="train")
         self.log_params(self.mu, self.sigma)
-        self.log_ablation(images_list=images_trajectory, texts_list=texts_trajectory, scores_list=scores[rewards_index], stage="train")
+        self.log_ablation(images_list=images_trajectory, texts_list=texts_trajectory, scores_list=scores[evaluated_steps], stage="train")
 
+        self.update_parameters(self._x_flatten(epsilon), scores)
+        
     def log_ablation(self, images_list=None, texts_list=None, scores_list=None, stage="train"):
         path = str(self.trainer.logger.experiment.dir).removesuffix("/files") + f"/ablation/{stage}/{self.current_epoch}"
         os.makedirs(path, exist_ok=True)
@@ -198,9 +206,16 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
                         f.write(f"Score: {score.item():.2f}, Text: {text}\n")
         ############################ save final text ############################
 
+        ############################ save parameters ############################
+        torch.save(self.mu, f"{path}/mu.pt")
+        torch.save(self.sigma, f"{path}/sigma.pt")
+        ############################ save parameters ############################
+
+
     def log_params(self, mu, sigma):
+        for i, sigma_ in enumerate(sigma):
+            self.log(f"||sigma_{i}_trace||_2", sigma_.sum())
         self.log(f"||mu||_2", mu.norm())
-        self.log(f"sigma_trace", sigma.sum(-1).mean())
 
     def test_step(self, _, __):
         return
@@ -211,18 +226,17 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         batch_size = self.validation_batch_size
 
         generator = torch.Generator(device=self.device).manual_seed(1)
+        
+        epsilon = self.get_noise(batch_size, generator=generator)
 
-        batch_mu = einops.repeat(self.mu, 'T D -> T B D', B=batch_size)
-
-        epsilon = self._x_unflatten(batch_mu)
-
-        prior = self.prior[:batch_size]
+        prior = epsilon[0]
+        given_noise = epsilon[1:]
 
         images = self.pipe(
             [self.generate_prompt]*batch_size,
             latents=prior.type(torch.float16),
             output_type="pil",
-            given_noise=epsilon,
+            given_noise=given_noise,
             num_inference_steps=self.num_sampling_steps,
             guidance_scale=self.guidance_scale,
         ).images

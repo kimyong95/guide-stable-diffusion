@@ -11,6 +11,7 @@ from lightning.pytorch.loggers.logger import DummyLogger
 import torchvision
 import lightning
 import PIL
+import bisect
 import matplotlib.pyplot as plt
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 from diffusers import StableDiffusionXLPipeline, AutoencoderKL, UNet2DConditionModel
@@ -21,9 +22,6 @@ from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneSt
 from utils.finetune_difussers import FinetuneEulerDiscreteScheduler, FinetuneStableDiffusionXLPipeline
 from utils.rewards import GeminiQuestion
 from utils.utils import find_closest_factors, disable_train
-
-from onediff.infer_compiler import oneflow_compile
-# from DeepCache import DeepCacheSDHelper
 
 REWAED_FUNC = {
     "gemini-question": GeminiQuestion
@@ -92,12 +90,23 @@ class DiffusionBase(LightningBase):
         
         self.generate_prompt = generate_prompt
         self.reward_query_prompt = reward_query_prompt
-        
+
         if type(reward_target_prompt) == str:
-            self.reward_target_prompt = { self.num_sampling_steps-1: reward_target_prompt }
+            self.reward_target_prompt = { self.num_sampling_steps: reward_target_prompt }
         elif type(reward_target_prompt) == dict:
-            self.reward_target_prompt = { int(k * (self.num_sampling_steps-1)): v for k, v in reward_target_prompt.items()}
-        
+            self.reward_target_prompt = { int(k * (self.num_sampling_steps)): v for k, v in reward_target_prompt.items()}
+        elif type(reward_target_prompt) == list:
+            self.pipe.scheduler.set_timesteps(self.num_sampling_steps)
+            sigma_cum = torch.cat([torch.tensor([1]), self.pipe.scheduler.sigmas[:-1]], dim=0).cumsum(dim=0)
+            sigma_cum = sigma_cum / sigma_cum[-1]
+
+            reward_k = []
+            delta = 1 / len(reward_target_prompt)
+            for i in range(1, len(reward_target_prompt)):
+                k = (sigma_cum >= i * delta).nonzero()[0].item()
+                reward_k.append(k)
+            reward_k.append(self.num_sampling_steps)
+            self.reward_target_prompt = { k: v for k, v in zip(reward_k, reward_target_prompt) }
 
         assert reward_func in REWAED_FUNC
         self.reward_func = REWAED_FUNC[reward_func]()
@@ -114,18 +123,36 @@ class DiffusionBase(LightningBase):
         return self
 
     def compile(self):
-        self.pipe_model = oneflow_compile(self.pipe_model)
-        cache_path = f"onediff_cache/{self.sd_model}"
-        try:
-            self.pipe_model.load_graph(cache_path, device=str(self.device))
-        except ValueError:
-            os.makedirs("onediff_cache", exist_ok=True)
-            self.pipe(prompt=["hello world"], num_inference_steps=self.num_sampling_steps).images
-            self.pipe_model.save_graph(cache_path)
+        if self.sd_model == "sd3":
+            pass
+            # torch._inductor.config.conv_1x1_as_mm = True
+            # torch._inductor.config.coordinate_descent_tuning = True
+            # torch._inductor.config.epilogue_fusion = False
+            # torch._inductor.config.coordinate_descent_check_all_directions = True
+            # self.pipe.transformer.to(memory_format=torch.channels_last)
+            # self.pipe.vae.to(memory_format=torch.channels_last)
+            # self.pipe.transformer = torch.compile(self.pipe.transformer, mode="max-autotune", fullgraph=True)
+            # self.pipe.vae.decode = torch.compile(self.pipe.vae.decode, mode="max-autotune", fullgraph=True)
+
+            # self.pipe(
+            #     prompt=["hello world"], num_inference_steps=self.num_sampling_steps, guidance_scale=self.guidance_scale,
+            # ).images
+                        
+        elif self.sd_model in ["sd2", "sd2-turbo", "sdxl","sdxl-lightning"]:
+            from onediff.infer_compiler import oneflow_compile
+
+            self.pipe.unet = oneflow_compile(self.pipe.unet)
+            cache_path = f"onediff_cache/{self.sd_model}"
+            try:
+                self.pipe.unet.load_graph(cache_path, device=str(self.device))
+            except ValueError:
+                os.makedirs("onediff_cache", exist_ok=True)
+                self.pipe(prompt=["hello world"], num_inference_steps=self.num_sampling_steps).images
+                self.pipe.unet.save_graph(cache_path)
 
     def latents_to_images(self, latents):
 
-        latents = (latents / self.pipe.vae.config.scaling_factor)
+        latents = (latents / self.pipe.vae.config.scaling_factor) + self.vae.config.shift_factor
         images = self.pipe.vae.decode(latents, return_dict=False)[0]
         images = self.pipe.image_processor.postprocess(images)
         return images
@@ -142,7 +169,12 @@ class DiffusionBase(LightningBase):
     def get_scores(self, images, index=None):
 
         if index is None:
-            index = self.num_sampling_steps-1
+            index = self.num_sampling_steps
+        
+        reward_steps = list(self.reward_target_prompt.keys())
+        if index not in reward_steps:
+            index = reward_steps[bisect.bisect_right(reward_steps,index)]
+
         reward_target_prompt = self.reward_target_prompt[index]
 
         scores, outputs = self.reward_func(images, reward_target_prompt, self.reward_query_prompt)

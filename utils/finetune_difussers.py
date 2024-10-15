@@ -24,31 +24,6 @@ from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
 
 class FinetuneFlowMatchEulerDiscreteScheduler(FlowMatchEulerDiscreteScheduler):
 
-    ######################### copy from parent #########################
-    def set_timesteps(
-        self,
-        num_inference_steps: int = None,
-        device: Union[str, torch.device] = None,
-        sigmas: Optional[List[float]] = None,
-        mu: Optional[float] = None,
-        # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
-        timesteps: Optional[List[int]] = None,
-        # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
-    ):
-        if timesteps is not None:
-            # t to sigmas
-            assert sigmas is None
-            sigmas = timesteps / self.config.num_train_timesteps
-            sigmas = sigmas / ( self.config.shift - (sigmas * (self.config.shift-1)) )
-        super().set_timesteps(
-            num_inference_steps=num_inference_steps,
-            device=device,
-            sigmas=sigmas,
-            mu=mu
-        )
-        
-    ######################### copy from parent #########################
-        
 
     ######################### copy from parent #########################
     def step(
@@ -159,6 +134,8 @@ class FinetuneStableDiffusion3Pipeline(StableDiffusion3Pipeline):
         # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
         given_noise: Optional[torch.FloatTensor] = None,
         s_churn: float = 0.01,
+        start_at_i: int = 0,
+        start_at_i_latents: torch.FloatTensor = None,
         # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
     ):
         r"""
@@ -339,6 +316,14 @@ class FinetuneStableDiffusion3Pipeline(StableDiffusion3Pipeline):
             for i, t in enumerate(timesteps):
                 if self.interrupt:
                     continue
+
+                # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
+                if i < start_at_i:
+                    progress_bar.update()
+                    continue
+                if i == start_at_i and start_at_i_latents is not None:
+                    latents = start_at_i_latents.type(prompt_embeds.dtype)
+                # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
 
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
