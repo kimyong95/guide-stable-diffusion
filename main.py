@@ -54,15 +54,6 @@ class WandbSaveConfigCallback(SaveConfigCallback):
                 dest = trainer.logger.experiment.dir + f"/code/{rel_code}"
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 shutil.copyfile(code, dest)
-                    
-class WandbModelCheckpoint(ModelCheckpoint):
-
-    def _ModelCheckpoint__resolve_ckpt_dir(self, trainer):
-        if trainer.logger is not None and isinstance(trainer.logger, WandbLogger):
-            log_dir = str(trainer.logger.experiment.dir).removesuffix("/files")
-            return log_dir + "/checkpoints"
-        else:
-            return super()._ModelCheckpoint__resolve_ckpt_dir(trainer)
 
 def cli_main():
     cli = LightningCLI(

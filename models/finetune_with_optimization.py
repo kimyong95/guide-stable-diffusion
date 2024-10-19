@@ -25,8 +25,8 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class FinetuneDiffusionWithOptimization(DiffusionBase):
 
-    def __init__(self, lr, training_batch_size, validation_batch_size, evaluate_intermidiate_steps, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
-        super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
+    def __init__(self, lr, training_batch_size, validation_batch_size, compile, evaluate_intermidiate_steps, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
+        super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, compile)
 
         self.lr = lr
         self.training_batch_size = training_batch_size
@@ -185,6 +185,9 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
 
         self.update_parameters(self._x_flatten(epsilon), scores)
         
+        # dummy
+        self.optimizers().step()
+
     def log_ablation(self, images_list=None, texts_list=None, scores_list=None, stage="train"):
         path = str(self.trainer.logger.experiment.dir).removesuffix("/files") + f"/ablation/{stage}/{self.current_epoch}"
         os.makedirs(path, exist_ok=True)
@@ -205,11 +208,6 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
                         text = text.replace('\n', '').strip()
                         f.write(f"Score: {score.item():.2f}, Text: {text}\n")
         ############################ save final text ############################
-
-        ############################ save parameters ############################
-        torch.save(self.mu, f"{path}/mu.pt")
-        torch.save(self.sigma, f"{path}/sigma.pt")
-        ############################ save parameters ############################
 
 
     def log_params(self, mu, sigma):

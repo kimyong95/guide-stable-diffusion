@@ -11,30 +11,29 @@ trainer:
       project: finetune-stable-diffusion
       name: finetune-with-optimization
   callbacks:
-  - class_path: WandbModelCheckpoint
+  - class_path: ModelCheckpoint
     init_args:
-      monitor: "train/score_mean"
-      mode: min
-      save_top_k: -1
-      save_last: True
       every_n_epochs: 10
+      save_top_k: -1
       filename: '{epoch:03d}'
+      save_on_train_epoch_end: True
 data:
   class_path: datamodule.DummyDataModule
   init_args: {}
 model:
   class_path: models.finetune_with_optimization.FinetuneDiffusionWithOptimization
   init_args:
-    sd_model: sd3
-    lr: 100
+    compile: True
+    sd_model: sdxl
+    lr: 50
     training_batch_size: 32
     validation_batch_size: 16
-    generate_prompt: "A realistic photo showing a yellow reindeer and a blue elephant playing with ball on a beach, the eleplant is carrying the ball with his trunk."
+    generate_prompt: "A robotic cat and a robotic dog playing with a football on the moon, an earth on the sky."
     reward_target_prompt:
-    - "A realistic photo showing a yellow reindeer and a blue elephant."
-    - "A realistic photo showing a yellow reindeer and a blue elephant playing with ball."
-    - "A realistic photo showing a yellow reindeer and a blue elephant playing with ball on a beach."
-    - "A realistic photo showing a yellow reindeer and a blue elephant playing with ball on a beach, the eleplant is carrying the ball with his trunk."
+    - "A robotic cat and a robotic dog."
+    - "A robotic cat and a robotic dog playing with a football."
+    - "A robotic cat and a robotic dog playing with a football on the moon."
+    - "A robotic cat and a robotic dog playing with a football on the moon, an earth on the sky."
     reward_func: "gemini-question"
     reward_query_prompt: null
     evaluate_intermidiate_steps: False

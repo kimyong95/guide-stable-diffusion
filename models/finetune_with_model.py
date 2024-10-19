@@ -77,6 +77,9 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         self.log_ablation(images_list=images_list, texts=texts, scores=scores, y_pred_list=pred_y_list, stage="train")
         self.log_score(scores, stage="train")
 
+        # dummy
+        self.optimizers().step()
+
     @torch.no_grad()
     def finetune_and_generate(self, epsilon, L, batch_size):
         

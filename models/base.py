@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from utils.utils import disable_train
 torch.set_warn_always(False)
 plt.rcParams.update({'axes.formatter.limits': (-3, 3)})
-
+import os
 class LightningBase(L.LightningModule):
 
     def __init__(self):
@@ -17,10 +17,16 @@ class LightningBase(L.LightningModule):
         self.ignored_checkpoint_keys = []
 
     def on_fit_start(self):
-        if isinstance(self.trainer.logger, DummyLogger):
-            self.trainer.logger.experiment.dir = "debug_logs"
-        super().on_fit_start()
+        log_dir = str(self.trainer.logger.experiment.dir).removesuffix("/files")
+        ckpt_dir = os.path.realpath(os.path.expanduser(f"{log_dir}/checkpoints"))
+        self.trainer.callbacks[-1].dirpath = f"{log_dir}/checkpoints"
 
+        for i in range(len(self.trainer.callbacks)):
+            if type(self.trainer.callbacks[i]) == L.pytorch.callbacks.ModelCheckpoint:
+                self.trainer.callbacks[i].dirpath = ckpt_dir
+        
+        super().on_fit_start()
+        
     @staticmethod
     def load_from_run_path(run_path, checkpoint="last", training=False):
         checkpoint_path = f"{run_path}/checkpoints/{checkpoint}.ckpt"

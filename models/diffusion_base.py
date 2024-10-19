@@ -29,7 +29,7 @@ REWAED_FUNC = {
 
 class DiffusionBase(LightningBase):
 
-    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
+    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, compile):
 
         super().__init__()
         self.sd_model = sd_model
@@ -40,7 +40,7 @@ class DiffusionBase(LightningBase):
             scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
             self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
-            self.pipe_model = self.pipe.unet
+            self.pipe_model_config = self.pipe.unet.config
         elif sd_model == "sd2-turbo":
             self.num_sampling_steps = 4
             self.guidance_scale = 0.0
@@ -48,9 +48,9 @@ class DiffusionBase(LightningBase):
             scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
             self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
-            self.pipe_model = self.pipe.unet
+            self.pipe_model_config = self.pipe.unet.config
         elif sd_model == "sdxl":
-            self.num_sampling_steps = 50
+            self.num_sampling_steps = 30
             self.guidance_scale = 7.0
             model_id = "stabilityai/stable-diffusion-xl-base-1.0"
             vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
@@ -58,7 +58,7 @@ class DiffusionBase(LightningBase):
             self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
-            self.pipe_model = self.pipe.unet
+            self.pipe_model_config = self.pipe.unet.config
         elif sd_model == "sdxl-lightning":
             self.num_sampling_steps = 8
             self.guidance_scale = 0.0
@@ -70,7 +70,7 @@ class DiffusionBase(LightningBase):
             self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, unet=unet, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
-            self.pipe_model = self.pipe.unet
+            self.pipe_model_config = self.pipe.unet.config
         elif sd_model == "sd3":
             self.num_sampling_steps = 28
             self.guidance_scale = 7.0
@@ -79,14 +79,14 @@ class DiffusionBase(LightningBase):
             self.pipe = FinetuneStableDiffusion3Pipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.vae.enable_slicing()
             self.pipe.vae.encoder = None
-            self.pipe_model = self.pipe.transformer
+            self.pipe_model_config = self.pipe.transformer.config
                     
         for k, c in self.pipe.components.items():
             if isinstance(c, torch.nn.Module):
                 self.pipe.components[k] = disable_train(c)
 
-        self.sample_size = self.pipe_model.config.sample_size
-        self.channels = self.pipe_model.config.in_channels
+        self.sample_size = self.pipe_model_config.sample_size
+        self.channels = self.pipe_model_config.in_channels
         
         self.generate_prompt = generate_prompt
         self.reward_query_prompt = reward_query_prompt
@@ -97,7 +97,8 @@ class DiffusionBase(LightningBase):
             self.reward_target_prompt = { int(k * (self.num_sampling_steps)): v for k, v in reward_target_prompt.items()}
         elif type(reward_target_prompt) == list:
             self.pipe.scheduler.set_timesteps(self.num_sampling_steps)
-            sigma_cum = torch.cat([torch.tensor([1]), self.pipe.scheduler.sigmas[:-1]], dim=0).cumsum(dim=0)
+            init_sigma = self.pipe.scheduler.init_noise_sigma.unsqueeze(dim=0) if hasattr(self.pipe.scheduler,"init_noise_sigma") else torch.tensor([1.0])
+            sigma_cum = torch.cat([init_sigma, self.pipe.scheduler.sigmas[:-1]], dim=0).cumsum(dim=0)
             sigma_cum = sigma_cum / sigma_cum[-1]
 
             reward_k = []
@@ -111,20 +112,30 @@ class DiffusionBase(LightningBase):
         assert reward_func in REWAED_FUNC
         self.reward_func = REWAED_FUNC[reward_func]()
 
+        self.compile = compile
+
     def on_fit_start(self):
         super().on_fit_start()
         self.pipe = self.pipe.to(self.device)
         self.reward_func = self.reward_func.to(self.device)
 
-        # if not debug mode
-        if not isinstance(self.trainer.logger, DummyLogger):
-            self.compile()
+        if self.compile:
+            self.compile_model()
 
         return self
 
-    def compile(self):
+    def compile_model(self):
         if self.sd_model == "sd3":
-            pass
+            from onediffx import compile_pipe
+            compile_options = {
+                "mode": "max-optimize:max-autotune:low-precision:cache-all",
+                "memory_format": "channels_last",
+            }
+
+            self.pipe = compile_pipe(
+                self.pipe, backend="nexfort", options=compile_options, fuse_qkv_projections=True
+            )
+        
             # torch._inductor.config.conv_1x1_as_mm = True
             # torch._inductor.config.coordinate_descent_tuning = True
             # torch._inductor.config.epilogue_fusion = False
