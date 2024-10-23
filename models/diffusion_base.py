@@ -29,7 +29,7 @@ REWAED_FUNC = {
 
 class DiffusionBase(LightningBase):
 
-    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, compile):
+    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, compile):
 
         super().__init__()
         self.sd_model = sd_model
@@ -90,6 +90,7 @@ class DiffusionBase(LightningBase):
         
         self.generate_prompt = generate_prompt
         self.reward_query_prompt = reward_query_prompt
+        self.max_reward_value = max_reward_value
 
         if type(reward_target_prompt) == str:
             self.reward_target_prompt = { self.num_sampling_steps: reward_target_prompt }
@@ -188,7 +189,7 @@ class DiffusionBase(LightningBase):
 
         reward_target_prompt = self.reward_target_prompt[index]
 
-        scores, outputs = self.reward_func(images, reward_target_prompt, self.reward_query_prompt)
+        scores, outputs = self.reward_func(images, reward_target_prompt, self.reward_query_prompt, max_reward=self.max_reward_value)
         scores = - scores
 
         return scores, outputs

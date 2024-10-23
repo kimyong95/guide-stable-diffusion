@@ -25,10 +25,11 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class FinetuneDiffusionWithOptimization(DiffusionBase):
 
-    def __init__(self, lr, training_batch_size, validation_batch_size, compile, evaluate_intermidiate_steps, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
-        super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, compile)
+    def __init__(self, lr, projection, training_batch_size, validation_batch_size, compile, evaluate_intermidiate_steps, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value):
+        super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, compile)
 
         self.lr = lr
+        self.projection = projection
         self.training_batch_size = training_batch_size
         self.validation_batch_size = validation_batch_size
         self.evaluate_intermidiate_steps = evaluate_intermidiate_steps
@@ -106,9 +107,15 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         
         epsilon = self.get_noise(batch_size)
 
-        prior = epsilon[0]
-        given_noise = epsilon[1:]
-        
+        if self.projection:
+            epsilon_norm = self._x_flatten(epsilon).norm(dim=-1)
+            projected_epsilon = epsilon / epsilon_norm[:,:,None,None,None] * 256
+            prior = projected_epsilon[0]
+            given_noise = projected_epsilon[1:]
+        else:
+            prior = epsilon[0]
+            given_noise = epsilon[1:]
+
         # collect latents trajectory
         latents_trajectory = [prior]
         def callback_func(self, index, timestep, callback_kwargs):
@@ -227,8 +234,14 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         
         epsilon = self.get_noise(batch_size, generator=generator)
 
-        prior = epsilon[0]
-        given_noise = epsilon[1:]
+        if self.projection:
+            epsilon_norm = self._x_flatten(epsilon).norm(dim=-1)
+            projected_epsilon = epsilon / epsilon_norm[:,:,None,None,None] * 256
+            prior = projected_epsilon[0]
+            given_noise = projected_epsilon[1:]
+        else:
+            prior = epsilon[0]
+            given_noise = epsilon[1:]
 
         images = self.pipe(
             [self.generate_prompt]*batch_size,

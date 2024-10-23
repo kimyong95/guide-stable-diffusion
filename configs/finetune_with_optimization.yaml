@@ -25,10 +25,13 @@ model:
   init_args:
     compile: True
     sd_model: sdxl
-    lr: 50
+    lr: 200
+    projection: True
     training_batch_size: 32
     validation_batch_size: 16
     generate_prompt: "A robotic cat and a robotic dog playing with a football on the moon, an earth on the sky."
+    reward_query_prompt: "Does the prompt '{target_prompt}' accurately describe the image? Rate 0 (inaccurate) or 1 (accurate).\nAnswer in the format: Score=(score), Reason=(reason)."
+    max_reward_value: 1.0
     reward_target_prompt:
     - "A robotic cat and a robotic dog."
     - "A robotic cat and a robotic dog playing with a football."

@@ -46,7 +46,7 @@ class GeminiQuestion(RewardBase):
         return embedding
 
     @staticmethod
-    @retry(times=10, exceptions=(InternalServerError,))
+    @retry(times=10, exceptions=(InternalServerError,ValueError))
     async def generate_content_async(contents_list):
         model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         safety_settings = {
@@ -62,7 +62,7 @@ class GeminiQuestion(RewardBase):
         texts = [r.text.strip() for r in responses]
         return texts
 
-    def __call__(self, images: List[Image.Image], target_prompt, query_prompt):
+    def __call__(self, images: List[Image.Image], target_prompt, query_prompt, max_reward=5.0):
         
         if not query_prompt:
             question_query = inspect.cleandoc(f"""
@@ -94,6 +94,6 @@ class GeminiQuestion(RewardBase):
             match = re.search(r"Score=(\d+)", response)
             score = int(match.group(1)) if match else 0
             scores.append(score)
-        scores = torch.as_tensor(scores, device=self.device) / 5.0
+        scores = torch.as_tensor(scores, device=self.device) / max_reward
 
         return scores, responses
