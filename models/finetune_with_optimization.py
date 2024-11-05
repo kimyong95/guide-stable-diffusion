@@ -55,11 +55,12 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
 
         batch_noise_original_norm = batch_noise_original.norm(dim=-1)
         batch_noise_norm = batch_noise.norm(dim=-1)
-        batch_noise = batch_noise * ( batch_noise_norm[:,:,None] / batch_noise_original_norm[:,:,None] )
+        batch_noise_projected = batch_noise * ( batch_noise_norm[:,:,None] / batch_noise_original_norm[:,:,None] )
 
-        batch_noise = self._x_unflatten(batch_noise)
+        batch_noise_original = self._x_unflatten(batch_noise_original)
+        batch_noise_projected = self._x_unflatten(batch_noise_projected)
 
-        return batch_noise
+        return batch_noise_projected, batch_noise_original
 
     def update_parameters(self, z, scores):
         ''' minimize score '''
@@ -111,10 +112,10 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
 
         batch_size = self.training_batch_size
         
-        epsilon = self.get_noise(batch_size)
+        epsilon_projected, epsilon_original = self.get_noise(batch_size)
 
-        prior = epsilon[0]
-        given_noise = epsilon[1:]
+        prior = epsilon_projected[0]
+        given_noise = epsilon_projected[1:]
 
         # collect latents trajectory
         latents_trajectory = [prior]
@@ -191,7 +192,7 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         self.log_params(self.mu, self.sigma)
         self.log_ablation(images_list=images_trajectory, texts_list=texts_trajectory, scores_list=scores[evaluated_steps], stage="train")
 
-        self.update_parameters(self._x_flatten(epsilon), scores)
+        self.update_parameters(self._x_flatten(epsilon_original), scores)
         
         # dummy
         self.optimizers().step()
@@ -233,10 +234,10 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
 
         generator = torch.Generator(device=self.device).manual_seed(1)
         
-        epsilon = self.get_noise(batch_size, generator=generator)
+        epsilon_projected, epsilon_original = self.get_noise(batch_size, generator=generator)
 
-        prior = epsilon[0]
-        given_noise = epsilon[1:]
+        prior = epsilon_projected[0]
+        given_noise = epsilon_projected[1:]
 
         images = self.pipe(
             [self.generate_prompt]*batch_size,
