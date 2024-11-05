@@ -55,7 +55,7 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
 
         batch_noise_original_norm = batch_noise_original.norm(dim=-1)
         batch_noise_norm = batch_noise.norm(dim=-1)
-        batch_noise_projected = batch_noise * ( batch_noise_norm[:,:,None] / batch_noise_original_norm[:,:,None] )
+        batch_noise_projected = batch_noise * ( batch_noise_original_norm[:,:,None] / batch_noise_norm[:,:,None] )
 
         batch_noise_original = self._x_unflatten(batch_noise_original)
         batch_noise_projected = self._x_unflatten(batch_noise_projected)
@@ -159,7 +159,6 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
                 latents=prior.type(torch.float16),
                 num_inference_steps=self.num_sampling_steps,
                 guidance_scale=self.guidance_scale,
-                # s_churn=0.0,
             ).images
 
             scores_i, texts_i = self.get_scores(images_i, i)
