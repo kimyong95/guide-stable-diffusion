@@ -46,7 +46,7 @@ class GeminiQuestion(RewardBase):
         return embedding
 
     @staticmethod
-    @retry(times=10, exceptions=(InternalServerError,ValueError))
+    @retry(times=10, failed_return=None, exceptions=(InternalServerError,ValueError))
     async def generate_content_async(contents_list):
         model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         safety_settings = {
@@ -56,14 +56,14 @@ class GeminiQuestion(RewardBase):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
 
-        generation_config = genai.types.GenerationConfig(temperature=0.0)
+        generation_config = genai.types.GenerationConfig(temperature=0.0, max_output_tokens=100)
         tasks = [model.generate_content_async(contents, safety_settings=safety_settings, generation_config=generation_config, request_options={"timeout": 300}) for contents in contents_list]
         responses = await asyncio.gather(*tasks)
         texts = [r.text.strip() for r in responses]
         return texts
 
     def __call__(self, images: List[Image.Image], target_prompt, query_prompt, max_reward=5.0):
-        
+
         if not query_prompt:
             question_query = inspect.cleandoc(f"""
                 Does the prompt '{target_prompt}' accurately describe the image? Rate from 1 (inaccurate) to 5 (accurate).
@@ -88,7 +88,10 @@ class GeminiQuestion(RewardBase):
                 raise ValueError(f"Invalid image type: {type(image)}")
         responses = loop.run_until_complete(self.generate_content_async(contents))
         # Eg responses = ["Score=5, Reason=xxx.", ...]
-    
+
+        if responses is None:
+            responses = [""] * len(images)
+
         scores = []
         for response in responses:
             match = re.search(r"Score=(\d+)", response)

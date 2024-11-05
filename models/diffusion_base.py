@@ -95,7 +95,14 @@ class DiffusionBase(LightningBase):
         if type(reward_target_prompt) == str:
             self.reward_target_prompt = { self.num_sampling_steps: reward_target_prompt }
         elif type(reward_target_prompt) == dict:
-            self.reward_target_prompt = { int(k * (self.num_sampling_steps)): v for k, v in reward_target_prompt.items()}
+            types = [type(k) for k in reward_target_prompt.keys()]
+            if all([t == int for t in types]):
+                assert self.num_sampling_steps in reward_target_prompt, f"last step must be included in reward_target_prompt keys"
+                self.reward_target_prompt = reward_target_prompt
+            elif all([t == float for t in types]):
+                self.reward_target_prompt = { int(k * (self.num_sampling_steps)): v for k, v in reward_target_prompt.items()}
+            else:
+                raise ValueError(f"Invalid type for reward_target_prompt keys: {types}")
         elif type(reward_target_prompt) == list:
             self.pipe.scheduler.set_timesteps(self.num_sampling_steps)
             init_sigma = self.pipe.scheduler.init_noise_sigma.unsqueeze(dim=0) if hasattr(self.pipe.scheduler,"init_noise_sigma") else torch.tensor([1.0])

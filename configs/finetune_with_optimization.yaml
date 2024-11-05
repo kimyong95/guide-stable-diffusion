@@ -29,13 +29,13 @@ model:
     projection: True
     training_batch_size: 32
     validation_batch_size: 16
-    generate_prompt: "A robotic cat and a robotic dog playing with a football on the moon, an earth on the sky."
-    max_reward_value: 1.0
+    generate_prompt: "A robotic cat and a robotic dog playing with a football on the moon."
     reward_target_prompt:
-    - "A robotic cat and a robotic dog."
-    - "A robotic cat and a robotic dog playing with a football."
     - "A robotic cat and a robotic dog playing with a football on the moon."
-    - "A robotic cat and a robotic dog playing with a football on the moon, an earth on the sky."
+    - "A robotic cat and a robotic dog playing with a football on the moon."
+    - "A robotic cat and a robotic dog playing with a football on the moon."
+    - "A robotic cat and a robotic dog playing with a football on the moon."
     reward_func: "gemini-question"
-    reward_query_prompt: "Does the prompt '{target_prompt}' accurately describe the image? Rate 0 (inaccurate) or 1 (accurate).\nAnswer in the format: Score=(score), Reason=(reason)."
+    reward_query_prompt: "Does the image accurately, precisely and comprehensively described by the prompt '{target_prompt}'? Answer score=0 (no) or score=1 (yes).\nAnswer in the format: Score=(score), Reason=(reason)."
+    max_reward_value: 1.0
     evaluate_intermidiate_steps: False

@@ -49,7 +49,13 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
 
         batch_sigma = einops.repeat(self.sigma, 'T D -> T B D', B=batch_size)
 
-        batch_noise = batch_mu + batch_sigma**0.5 * torch.randn(batch_mu.size(), device=self.device, generator=generator)
+        batch_noise_original = torch.randn(batch_mu.size(), device=self.device, generator=generator)
+
+        batch_noise = batch_mu + batch_sigma**0.5 * batch_noise_original
+
+        batch_noise_original_norm = batch_noise_original.norm(dim=-1)
+        batch_noise_norm = batch_noise.norm(dim=-1)
+        batch_noise = batch_noise * ( batch_noise_norm[:,:,None] / batch_noise_original_norm[:,:,None] )
 
         batch_noise = self._x_unflatten(batch_noise)
 
@@ -107,14 +113,8 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         
         epsilon = self.get_noise(batch_size)
 
-        if self.projection:
-            epsilon_norm = self._x_flatten(epsilon).norm(dim=-1)
-            projected_epsilon = epsilon / epsilon_norm[:,:,None,None,None] * 256
-            prior = projected_epsilon[0]
-            given_noise = projected_epsilon[1:]
-        else:
-            prior = epsilon[0]
-            given_noise = epsilon[1:]
+        prior = epsilon[0]
+        given_noise = epsilon[1:]
 
         # collect latents trajectory
         latents_trajectory = [prior]
@@ -158,7 +158,7 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
                 latents=prior.type(torch.float16),
                 num_inference_steps=self.num_sampling_steps,
                 guidance_scale=self.guidance_scale,
-                s_churn=0.0,
+                # s_churn=0.0,
             ).images
 
             scores_i, texts_i = self.get_scores(images_i, i)
@@ -171,6 +171,7 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
             texts_trajectory.append(texts_i)
         
         scores_final, texts_final = self.get_scores(images_final)
+        self.log_score(scores_final, stage="train")
         scores[-1] = scores_final
 
         evaluated_steps = evaluation_steps + [self.num_sampling_steps]
@@ -186,7 +187,7 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
 
         self.log_images(images_trajectory[-1], stage="train")
 
-        self.log_score(scores[-1], stage="train")
+        
         self.log_params(self.mu, self.sigma)
         self.log_ablation(images_list=images_trajectory, texts_list=texts_trajectory, scores_list=scores[evaluated_steps], stage="train")
 
@@ -234,14 +235,8 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         
         epsilon = self.get_noise(batch_size, generator=generator)
 
-        if self.projection:
-            epsilon_norm = self._x_flatten(epsilon).norm(dim=-1)
-            projected_epsilon = epsilon / epsilon_norm[:,:,None,None,None] * 256
-            prior = projected_epsilon[0]
-            given_noise = projected_epsilon[1:]
-        else:
-            prior = epsilon[0]
-            given_noise = epsilon[1:]
+        prior = epsilon[0]
+        given_noise = epsilon[1:]
 
         images = self.pipe(
             [self.generate_prompt]*batch_size,
@@ -257,72 +252,7 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         scores, texts = self.get_scores(images)
         self.log_score(scores, stage="validation")
 
-        self.log_ablation(images_list=None, texts_list=[texts], scores_list=[scores], stage="train")
+        self.log_ablation(images_list=None, texts_list=[texts], scores_list=[scores], stage="validation")
 
     def configure_optimizers(self):
         return torch.optim.Adam([self.dummy], lr=0.)
-
-class FinetuneDiffusionWithOptimizationOne(FinetuneDiffusionWithOptimization):
-
-    def __init__(self, lr, decay_sigma, training_batch_size, validation_batch_size, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func):
-        super().__init__(lr, training_batch_size, validation_batch_size, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
-
-        del self.mu
-        del self.sigma
-
-        mu = torch.zeros(1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
-        self.register_buffer('mu', mu)
-        sigma = torch.ones(1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
-        self.register_buffer('sigma', sigma) # entries is variance
-
-        self.scheduler_timesteps = self.pipe.scheduler.timesteps.clone()
-
-        self.decay_sigma = decay_sigma
-
-    def get_noise(self, batch_size, generator=None):
-        batch_mu = einops.repeat(self.mu, '1 D -> T B D', T=(1+self.num_sampling_steps), B=batch_size)
-
-        batch_sigma = einops.repeat(self.sigma, '1 D -> T B D', T=(1+self.num_sampling_steps), B=batch_size)
-
-        batch_noise = batch_mu + batch_sigma**0.5 * torch.randn(batch_mu.size(), device=self.device, generator=generator)
-
-        batch_noise = self._x_unflatten(batch_noise)
-
-        return batch_noise
-
-    def update_parameters(self, z, scores):
-        ''' minimize score '''
-
-        s_churn = 0.01
-
-        # z: (T, B, D)
-        # scores: (T, B)
-
-        ################### last z ###################
-        # z = z[-1].unsqueeze(0)
-        
-        ################# weighted z #################
-        # weighted-1
-        w = [self.pipe.scheduler.init_noise_sigma]
-        for i in range(0, self.num_sampling_steps):
-            sigma = self.pipe.scheduler.sigmas[i]
-            gamma = min(s_churn / (len(self.pipe.scheduler.sigmas) - 1), 2**0.5 - 1) if 0.0 <= sigma <= float("inf") else 0.0
-            sigma_hat = sigma * (gamma + 1)
-            _w = (sigma_hat**2 - sigma**2) ** 0.5
-            w.append(_w)
-        w = torch.stack(w)
-
-        # weighted-2
-        # w = torch.cat([self.pipe.scheduler.init_noise_sigma.unsqueeze(0),self.pipe.scheduler.sigmas[:-1]])
-
-        w = w / w.sum()
-
-        z = (z * w.to(z.device)[:,None,None]).sum(0).unsqueeze(0)
-        ################# weighted z #################
-
-        scores = scores[-1].unsqueeze(0)
-
-        super().update_parameters(z, scores)
-        
-        if self.decay_sigma is not None:
-            self.sigma = self.decay_sigma * self.sigma    

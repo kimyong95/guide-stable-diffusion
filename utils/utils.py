@@ -4,7 +4,7 @@ import math
 import functools
 import asyncio
 
-def retry(times, exceptions, backoff_factor=1):
+def retry(times, failed_return, exceptions, backoff_factor=1):
     """
     Retry Decorator
     Retries the wrapped function/method `times` times if the exceptions listed
@@ -27,7 +27,7 @@ def retry(times, exceptions, backoff_factor=1):
                     )
                     await asyncio.sleep(backoff_factor * 2**attempt)
                     attempt += 1
-            return func(*args, **kwargs)
+            return failed_return
         return wrapper
     return decorator
 

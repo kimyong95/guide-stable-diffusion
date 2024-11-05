@@ -16,6 +16,7 @@ from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffus
 from diffusers import StableDiffusion3Pipeline, StableDiffusionXLPipeline
 from diffusers.schedulers.scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler, FlowMatchEulerDiscreteSchedulerOutput
 from diffusers.schedulers.scheduling_euler_discrete import EulerDiscreteScheduler, EulerDiscreteSchedulerOutput
+from diffusers.schedulers.scheduling_ddim import DDIMScheduler, DDIMSchedulerOutput
 import torch
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 
@@ -841,6 +842,7 @@ class FinetuneEulerDiscreteScheduler(EulerDiscreteScheduler):
         return EulerDiscreteSchedulerOutput(prev_sample=prev_sample, pred_original_sample=pred_original_sample)
     ######################### copy from parent #########################
 
+
 class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
     @torch.no_grad()
@@ -888,6 +890,8 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         s_churn: float = 0.01,
         start_at_i: int = 0,
         start_at_i_latents: torch.FloatTensor = None,
+        given_prompt_embeds_list: Optional[List[Dict[str, torch.Tensor]]] = None,
+        enable_grad: bool = False,
         # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
         **kwargs,
     ):
@@ -1062,6 +1066,10 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         original_size = original_size or (height, width)
         target_size = target_size or (height, width)
 
+        # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
+        self._callback_tensor_inputs.extend(["noise_pred"])
+        # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
+
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
             prompt,
@@ -1130,16 +1138,17 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         # 5. Prepare latent variables
         num_channels_latents = self.unet.config.in_channels
-        latents = self.prepare_latents(
-            batch_size * num_images_per_prompt,
-            num_channels_latents,
-            height,
-            width,
-            prompt_embeds.dtype,
-            device,
-            generator,
-            latents,
-        )
+        with torch.set_grad_enabled(enable_grad):
+            latents = self.prepare_latents(
+                batch_size * num_images_per_prompt,
+                num_channels_latents,
+                height,
+                width,
+                prompt_embeds.dtype,
+                device,
+                generator,
+                latents,
+            )
 
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
@@ -1215,7 +1224,7 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             ).to(device=device, dtype=latents.dtype)
 
         self._num_timesteps = len(timesteps)
-        with self.progress_bar(total=num_inference_steps) as progress_bar:
+        with torch.set_grad_enabled(enable_grad), self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 if self.interrupt:
                     continue
@@ -1268,7 +1277,12 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
                 # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
-                latents = self.scheduler.step(noise_pred, t, latents, given_noise=_given_noise, s_churn=s_churn, **extra_step_kwargs, return_dict=False)[0]
+                if isinstance(self.scheduler, FinetuneEulerDiscreteScheduler):
+                    latents = self.scheduler.step(noise_pred, t, latents, given_noise=_given_noise, s_churn=s_churn, **extra_step_kwargs, return_dict=False)[0]
+                elif isinstance(self.scheduler, DDIMScheduler):
+                    latents = self.scheduler.step(noise_pred, t, latents, variance_noise=_given_noise, **extra_step_kwargs, return_dict=False)[0]
+                else:
+                    raise NotImplementedError(f"Scheduler {self.scheduler} is not supported.")
                 # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
