@@ -55,7 +55,7 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
 
         batch_noise_original_norm = batch_noise_original.norm(dim=-1)
         batch_noise_norm = batch_noise.norm(dim=-1)
-        batch_noise_projected = batch_noise * ( batch_noise_original_norm[:,:,None] / batch_noise_norm[:,:,None] )
+        batch_noise_projected = batch_noise / batch_noise_norm[:,:,None] * batch_noise_original_norm[:,:,None]
 
         batch_noise = self._x_unflatten(batch_noise)
         batch_noise_projected = self._x_unflatten(batch_noise_projected)
