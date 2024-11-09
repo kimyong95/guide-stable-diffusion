@@ -11,20 +11,19 @@ trainer:
       project: finetune-stable-diffusion
       name: finetune-with-model
   callbacks:
-  - class_path: WandbModelCheckpoint
+  - class_path: ModelCheckpoint
     init_args:
-      monitor: "train/score_mean"
-      mode: max
-      save_top_k: -1
-      save_last: True
       every_n_epochs: 10
+      save_top_k: -1
       filename: '{epoch:03d}'
+      save_on_train_epoch_end: True
 data:
   class_path: datamodule.DummyDataModule
   init_args: {}
 model:
   class_path: models.finetune_with_model.FinetuneDiffusionWithModel
   init_args:
+    compile: True
     guidance_model: "gp"
     sd_model: sdxl-lightning
     training_batch_size: 32
@@ -32,7 +31,8 @@ model:
     alpha: 80 # guidance step
     reg_mode: "projection"
     reg: 1e-3
-    generate_prompt: "A yellow reindeer, a blue elephant, a puppy."
-    reward_target_prompt: "A yellow reindeer, a blue elephant, a puppy."
+    generate_prompt: "A yellow reindeer and a blue elephant."
+    reward_target_prompt: "A yellow reindeer and a blue elephant."
     reward_func: "gemini-question"
     reward_query_prompt: null
+    max_reward_value: 5.0

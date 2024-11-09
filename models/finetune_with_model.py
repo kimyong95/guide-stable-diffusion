@@ -25,8 +25,8 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class FinetuneDiffusionWithModel(DiffusionBase):
 
-    def __init__(self, guidance_model, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, training_batch_size, validation_batch_size, alpha, reward_func, reg_mode, reg):
-        super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func)
+    def __init__(self, guidance_model, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, training_batch_size, validation_batch_size, alpha, reward_func, reg_mode, reg, max_reward_value, compile):
+        super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, compile)
 
         self.training_batch_size = training_batch_size
         self.validation_batch_size = validation_batch_size

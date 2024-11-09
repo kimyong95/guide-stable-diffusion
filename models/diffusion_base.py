@@ -170,8 +170,10 @@ class DiffusionBase(LightningBase):
                 self.pipe.unet.save_graph(cache_path)
 
     def latents_to_images(self, latents):
+        
+        shift_factor = self.pipe.vae.config.shift_factor if self.pipe.vae.config.shift_factor else 0.0
 
-        latents = (latents / self.pipe.vae.config.scaling_factor) + self.vae.config.shift_factor
+        latents = (latents / self.pipe.vae.config.scaling_factor) + shift_factor
         images = self.pipe.vae.decode(latents, return_dict=False)[0]
         images = self.pipe.image_processor.postprocess(images)
         return images
