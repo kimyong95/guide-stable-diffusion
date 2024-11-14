@@ -21,14 +21,14 @@ from safetensors.torch import load_file
 
 from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneStableDiffusion3Pipeline, FinetuneFlowMatchEulerDiscreteScheduler
 from utils.finetune_difussers import FinetuneEulerDiscreteScheduler, FinetuneStableDiffusionXLPipeline
-from utils.rewards import GeminiQuestion, Compressibility
+from utils.rewards import GeminiQuestion, Compressibility, InCompressibility, Aesthetic
 from utils.utils import find_closest_factors, disable_train
 
 REWAED_FUNC = {
     "gemini-question": GeminiQuestion,
     "compressibility": Compressibility,
-    # "incompresibility": Incompressibility,
-    # "aesthetic": Aesthetic,
+    "incompresibility": InCompressibility,
+    "aesthetic": Aesthetic,
 }
 
 class DiffusionBase(LightningBase):
@@ -224,7 +224,7 @@ class DiffusionBase(LightningBase):
                 index = reward_steps[bisect.bisect_right(reward_steps,index)]
             reward_target_prompt = self.reward_target_prompt[index]
             rewards, outputs = self.reward_func(images, reward_target_prompt, self.reward_query_prompt, max_reward=self.max_reward_value)
-        elif type(self.reward_func) == Compressibility:
+        elif type(self.reward_func) in [Compressibility, InCompressibility, Aesthetic]:
             rewards, outputs = self.reward_func(images)
 
 

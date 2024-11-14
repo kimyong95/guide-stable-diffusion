@@ -25,6 +25,61 @@ class RewardBase:
         self.device = device
         return self
 
+
+from transformers import CLIPModel, CLIPProcessor
+import torch.nn as nn
+class MLP(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(768, 1024),
+            nn.Dropout(0.2),
+            nn.Linear(1024, 128),
+            nn.Dropout(0.2),
+            nn.Linear(128, 64),
+            nn.Dropout(0.1),
+            nn.Linear(64, 16),
+            nn.Linear(16, 1),
+        )
+
+    @torch.no_grad()
+    def forward(self, embed):
+        return self.layers(embed)
+class AestheticScorer(torch.nn.Module):
+    def __init__(self, dtype):
+        super().__init__()
+        self.clip = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
+        self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+        self.mlp = MLP()
+        state_dict = torch.load("related_works/d3po/d3po_pytorch/assets/sac+logos+ava1-l14-linearMSE.pth")
+        self.mlp.load_state_dict(state_dict)
+        self.dtype = dtype
+        self.eval()
+
+    @torch.no_grad()
+    def __call__(self, images):
+        device = next(self.parameters()).device
+        inputs = self.processor(images=images, return_tensors="pt")
+        inputs = {k: v.to(self.dtype).to(device) for k, v in inputs.items()}
+        embed = self.clip.get_image_features(**inputs)
+        # normalize embedding
+        embed = embed / torch.linalg.vector_norm(embed, dim=-1, keepdim=True)
+        return self.mlp(embed).squeeze(1)
+class Aesthetic(RewardBase):
+    def __init__(self):
+        super().__init__()
+        self.aesthetic_scorer = AestheticScorer(dtype=torch.float32)
+    
+    def to(self, device):
+        self.device = device
+        self.aesthetic_scorer.to(device)
+        return self
+
+    @torch.no_grad()
+    def __call__(self, images: List[Image.Image], **kwargs):
+        rewards = self.aesthetic_scorer(images)
+        return rewards, [""] * len(images)
+
 class Compressibility(RewardBase):
     def __init__(self):
         super().__init__()
@@ -46,6 +101,13 @@ class Compressibility(RewardBase):
         dummy_responses = [""] * len(images)
 
         return scores, dummy_responses
+
+class InCompressibility(Compressibility):
+    
+    # higher is better
+    def __call__(self, images: List[Image.Image], **kwargs):
+        scores, dummy_responses = super().__call__(images, **kwargs)
+        return -scores, dummy_responses
 
 class GeminiQuestion(RewardBase):
     def __init__(self):
