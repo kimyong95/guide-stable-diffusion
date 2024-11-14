@@ -25,8 +25,8 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class FinetuneDiffusionWithModel(DiffusionBase):
 
-    def __init__(self, guidance_model, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, training_batch_size, validation_batch_size, alpha, reward_func, reg_mode, reg, max_reward_value, compile, validation_load_epsilon=None):
-        super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, compile)
+    def __init__(self, guidance_model, sd_model, generate_prompt, training_batch_size, validation_batch_size, alpha, reward_func, reg_mode, reg, max_reward_value=None, reward_query_prompt=None, reward_target_prompt=None, compile=False, validation_load_epsilon=None):
+        super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompt, max_reward_value, compile)
 
         self.training_batch_size = training_batch_size
         self.validation_batch_size = validation_batch_size
@@ -98,7 +98,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             given_noise = epsilon[1:]
             
             latents = self.pipe(
-                [self.generate_prompt]*batch_size,
+                [self.generate_prompt for _ in range(batch_size)],
                 latents=prior.type(torch.float16),
                 output_type="latent",
                 given_noise=given_noise,

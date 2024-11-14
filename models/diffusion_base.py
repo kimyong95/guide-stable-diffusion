@@ -12,6 +12,7 @@ import torchvision
 import lightning
 import PIL
 import bisect
+import random
 import matplotlib.pyplot as plt
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 from diffusers import StableDiffusionXLPipeline, AutoencoderKL, UNet2DConditionModel, DDIMScheduler
@@ -20,16 +21,19 @@ from safetensors.torch import load_file
 
 from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneStableDiffusion3Pipeline, FinetuneFlowMatchEulerDiscreteScheduler
 from utils.finetune_difussers import FinetuneEulerDiscreteScheduler, FinetuneStableDiffusionXLPipeline
-from utils.rewards import GeminiQuestion
+from utils.rewards import GeminiQuestion, Compressibility
 from utils.utils import find_closest_factors, disable_train
 
 REWAED_FUNC = {
-    "gemini-question": GeminiQuestion
+    "gemini-question": GeminiQuestion,
+    "compressibility": Compressibility,
+    # "incompresibility": Incompressibility,
+    # "aesthetic": Aesthetic,
 }
 
 class DiffusionBase(LightningBase):
 
-    def __init__(self, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, compile):
+    def __init__(self, sd_model, generate_prompt, reward_func, reward_query_prompt=None, reward_target_prompt=None, max_reward_value=None, compile=False):
 
         super().__init__()
         self.sd_model = sd_model
@@ -100,7 +104,7 @@ class DiffusionBase(LightningBase):
         self.sample_size = self.pipe_model_config.sample_size
         self.channels = self.pipe_model_config.in_channels
         
-        self.generate_prompt = generate_prompt
+        self._generate_prompt = generate_prompt
         self.reward_query_prompt = reward_query_prompt
         self.max_reward_value = max_reward_value
 
@@ -133,6 +137,16 @@ class DiffusionBase(LightningBase):
         self.reward_func = REWAED_FUNC[reward_func]()
 
         self.compile = compile
+
+    @property
+    def generate_prompt(self):
+        if type(self._generate_prompt) == str:
+            return self._generate_prompt
+        elif type(self._generate_prompt) == list:
+            return random.choice(self._generate_prompt)
+        else:
+            raise NotImplementedError()
+            
 
     def on_fit_start(self):
         super().on_fit_start()
@@ -204,14 +218,17 @@ class DiffusionBase(LightningBase):
         if index is None:
             index = self.num_sampling_steps
         
-        reward_steps = list(self.reward_target_prompt.keys())
-        if index not in reward_steps:
-            index = reward_steps[bisect.bisect_right(reward_steps,index)]
+        if type(self.reward_func) == GeminiQuestion:
+            reward_steps = list(self.reward_target_prompt.keys())
+            if index not in reward_steps:
+                index = reward_steps[bisect.bisect_right(reward_steps,index)]
+            reward_target_prompt = self.reward_target_prompt[index]
+            rewards, outputs = self.reward_func(images, reward_target_prompt, self.reward_query_prompt, max_reward=self.max_reward_value)
+        elif type(self.reward_func) == Compressibility:
+            rewards, outputs = self.reward_func(images)
 
-        reward_target_prompt = self.reward_target_prompt[index]
 
-        scores, outputs = self.reward_func(images, reward_target_prompt, self.reward_query_prompt, max_reward=self.max_reward_value)
-        scores = - scores
+        scores = - rewards
 
         return scores, outputs
 

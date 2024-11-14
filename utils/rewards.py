@@ -12,18 +12,40 @@ import inspect
 import re
 from typing import List
 from utils.utils import retry
-from google.api_core.exceptions import ServerError
+from google.api_core.exceptions import ServerError, TooManyRequests
 
 class RewardBase:
     def __init__(self):
         pass
 
-    def __call__(self, images: Image.Image, target_prompt: str, query_prompt: str):
+    def __call__(self, images: List[Image.Image], **kwargs):
         return
     
     def to(self, device):
         self.device = device
         return self
+
+class Compressibility(RewardBase):
+    def __init__(self):
+        super().__init__()
+
+    # higher is better
+    def __call__(self, images: List[Image.Image], **kwargs):
+
+        width, height = images[0].size
+        MAX_SIZE = width * height * 3 # assume RGB
+        
+        sizes = []
+        for image in images:
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=95)
+            sizes.append(buffer.tell() / MAX_SIZE)
+        sizes = torch.as_tensor(sizes, device=self.device)
+
+        scores = -sizes
+        dummy_responses = [""] * len(images)
+
+        return scores, dummy_responses
 
 class GeminiQuestion(RewardBase):
     def __init__(self):
@@ -46,7 +68,7 @@ class GeminiQuestion(RewardBase):
         return embedding
 
     @staticmethod
-    @retry(times=10, failed_return=None, exceptions=(ServerError,ValueError))
+    @retry(times=10, failed_return=None, exceptions=(ServerError, TooManyRequests, ValueError))
     async def generate_content_async(contents_list):
         model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         safety_settings = {
