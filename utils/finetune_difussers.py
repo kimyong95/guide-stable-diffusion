@@ -861,7 +861,6 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         negative_prompt: Optional[Union[str, List[str]]] = None,
         negative_prompt_2: Optional[Union[str, List[str]]] = None,
         num_images_per_prompt: Optional[int] = 1,
-        eta: float = 0.0,
         generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
         latents: Optional[torch.Tensor] = None,
         prompt_embeds: Optional[torch.Tensor] = None,
@@ -887,6 +886,7 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
         # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
         given_noise: torch.FloatTensor = None,
+        eta: float = 1.0,
         s_churn: float = 0.01,
         start_at_i: int = 0,
         start_at_i_latents: torch.FloatTensor = None,
@@ -1067,7 +1067,7 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         target_size = target_size or (height, width)
 
         # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
-        self._callback_tensor_inputs.extend(["noise_pred"])
+        self._callback_tensor_inputs.extend(callback_on_step_end_tensor_inputs)
         # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #
 
         # 1. Check inputs. Raise error if not correct
@@ -1278,7 +1278,9 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 latents_dtype = latents.dtype
                 # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
                 if isinstance(self.scheduler, FinetuneEulerDiscreteScheduler):
-                    latents = self.scheduler.step(noise_pred, t, latents, given_noise=_given_noise, s_churn=s_churn, **extra_step_kwargs, return_dict=False)[0]
+                    step_output = self.scheduler.step(noise_pred, t, latents, given_noise=_given_noise, s_churn=s_churn, **extra_step_kwargs, return_dict=True)
+                    latents = step_output.prev_sample
+                    pred_original_sample = step_output.pred_original_sample
                 elif isinstance(self.scheduler, DDIMScheduler):
                     latents = self.scheduler.step(noise_pred, t, latents, variance_noise=_given_noise, **extra_step_kwargs, return_dict=False)[0]
                 else:

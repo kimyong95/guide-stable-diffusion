@@ -25,11 +25,12 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class FinetuneDiffusionWithModel(DiffusionBase):
 
-    def __init__(self, guidance_model, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, training_batch_size, validation_batch_size, alpha, reward_func, reg_mode, reg, max_reward_value, compile):
+    def __init__(self, guidance_model, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, training_batch_size, validation_batch_size, alpha, reward_func, reg_mode, reg, max_reward_value, compile, validation_load_epsilon=None):
         super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, compile)
 
         self.training_batch_size = training_batch_size
         self.validation_batch_size = validation_batch_size
+        self.validation_load_epsilon = validation_load_epsilon
 
         self.alpha = alpha
         self.reg_mode = reg_mode
@@ -196,15 +197,9 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         generator = torch.Generator(device=self.device).manual_seed(1)
 
-        
-        # just to reproduce exactly same images as DDPO and DPOK, for paper publication purpose
-        if self.sd_model == "sdxl-lightning-ddim":
-            epsilon_ = []
-            for k in range(self.num_sampling_steps+1):
-                epsilon_.append(
-                    torch.randn([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32, generator=generator)
-                )
-            epsilon = torch.stack(epsilon_, dim=0)
+        # to reproduce exactly same images as DDPO and DPOK, for paper publication purpose
+        if self.validation_load_epsilon is not None:
+            epsilon = torch.load(self.validation_load_epsilon, map_location=self.device)
         else:
             epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32, generator=generator)
         
