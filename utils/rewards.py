@@ -12,7 +12,7 @@ import inspect
 import re
 from typing import List
 from utils.utils import retry
-from google.api_core.exceptions import InternalServerError
+from google.api_core.exceptions import ServerError
 
 class RewardBase:
     def __init__(self):
@@ -46,7 +46,7 @@ class GeminiQuestion(RewardBase):
         return embedding
 
     @staticmethod
-    @retry(times=10, failed_return=None, exceptions=(InternalServerError,ValueError))
+    @retry(times=10, failed_return=None, exceptions=(ServerError,ValueError))
     async def generate_content_async(contents_list):
         model = genai.GenerativeModel(model_name="gemini-1.5-flash")
         safety_settings = {
@@ -62,6 +62,7 @@ class GeminiQuestion(RewardBase):
         texts = [r.text.strip() for r in responses]
         return texts
 
+    # higher is better
     def __call__(self, images: List[Image.Image], target_prompt, query_prompt, max_reward=5.0):
 
         if not query_prompt:

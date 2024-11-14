@@ -195,7 +195,19 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         batch_size = self.validation_batch_size
 
         generator = torch.Generator(device=self.device).manual_seed(1)
-        epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32, generator=generator)
+
+        
+        # just to reproduce exactly same images as DDPO and DPOK, for paper publication purpose
+        if self.sd_model == "sdxl-lightning-ddim":
+            epsilon_ = []
+            for k in range(self.num_sampling_steps+1):
+                epsilon_.append(
+                    torch.randn([batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32, generator=generator)
+                )
+            epsilon = torch.stack(epsilon_, dim=0)
+        else:
+            epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32, generator=generator)
+        
         L = 1 + self.current_epoch
         images_list, latents, epsilon, pred_y_list = self.finetune_and_generate(epsilon, L, batch_size)
         self.log_images(images_list[-1], stage="validation")

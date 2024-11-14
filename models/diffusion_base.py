@@ -14,7 +14,7 @@ import PIL
 import bisect
 import matplotlib.pyplot as plt
 from torchmetrics.image import StructuralSimilarityIndexMeasure
-from diffusers import StableDiffusionXLPipeline, AutoencoderKL, UNet2DConditionModel
+from diffusers import StableDiffusionXLPipeline, AutoencoderKL, UNet2DConditionModel, DDIMScheduler
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
 
@@ -67,6 +67,18 @@ class DiffusionBase(LightningBase):
             unet.load_state_dict(load_file(hf_hub_download("ByteDance/SDXL-Lightning", "sdxl_lightning_8step_unet.safetensors")))
             vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
             scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler", timestep_spacing="trailing")
+            self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, unet=unet, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            self.pipe.enable_vae_slicing()
+            self.pipe.vae.encoder = None
+            self.pipe_model_config = self.pipe.unet.config
+        elif sd_model == "sdxl-lightning-ddim":
+            self.num_sampling_steps = 8
+            self.guidance_scale = 0.0
+            model_id = "stabilityai/stable-diffusion-xl-base-1.0"
+            unet = UNet2DConditionModel.from_pretrained(model_id, subfolder="unet", torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            unet.load_state_dict(load_file(hf_hub_download("ByteDance/SDXL-Lightning", "sdxl_lightning_8step_unet.safetensors")))
+            vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
+            scheduler = DDIMScheduler.from_pretrained(model_id, subfolder="scheduler", timestep_spacing="trailing")
             self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, unet=unet, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
