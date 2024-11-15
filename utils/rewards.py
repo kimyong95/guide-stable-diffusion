@@ -78,6 +78,7 @@ class Aesthetic(RewardBase):
     @torch.no_grad()
     def __call__(self, images: List[Image.Image], **kwargs):
         rewards = self.aesthetic_scorer(images)
+        rewards = rewards / 10
         return rewards, [""] * len(images)
 
 class Compressibility(RewardBase):
@@ -87,8 +88,7 @@ class Compressibility(RewardBase):
     # higher is better
     def __call__(self, images: List[Image.Image], **kwargs):
 
-        width, height = images[0].size
-        MAX_SIZE = width * height * 3 # assume RGB
+        MAX_SIZE = 1e6
         
         sizes = []
         for image in images:
@@ -107,7 +107,8 @@ class InCompressibility(Compressibility):
     # higher is better
     def __call__(self, images: List[Image.Image], **kwargs):
         scores, dummy_responses = super().__call__(images, **kwargs)
-        return -scores, dummy_responses
+        scores = scores * -1
+        return scores, dummy_responses
 
 class GeminiQuestion(RewardBase):
     def __init__(self):

@@ -25,12 +25,13 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class FinetuneDiffusionWithModel(DiffusionBase):
 
-    def __init__(self, guidance_model, sd_model, generate_prompt, training_batch_size, validation_batch_size, alpha, reward_func, reg_mode, reg, max_reward_value=None, reward_query_prompt=None, reward_target_prompt=None, compile=False, validation_load_epsilon=None):
+    def __init__(self, guidance_model, sd_model, generate_prompt, training_batch_size, validation_batch_size, alpha, reward_func, reg_mode, reg, validation_generate_prompt=None, max_reward_value=None, reward_query_prompt=None, reward_target_prompt=None, compile=False, validation_load_epsilon=None):
         super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompt, max_reward_value, compile)
 
         self.training_batch_size = training_batch_size
         self.validation_batch_size = validation_batch_size
         self.validation_load_epsilon = validation_load_epsilon
+        self.validation_generate_prompt = validation_generate_prompt
 
         self.alpha = alpha
         self.reg_mode = reg_mode
@@ -82,7 +83,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         self.optimizers().step()
 
     @torch.no_grad()
-    def finetune_and_generate(self, epsilon, L, batch_size):
+    def finetune_and_generate(self, epsilon, L, batch_size, prompts=None):
         
         epsilon = epsilon.clone()
         epsilon_init = epsilon.clone()
@@ -96,9 +97,15 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
             prior = epsilon[0]
             given_noise = epsilon[1:]
+
+            if prompts is not None:
+                assert len(prompts) == batch_size
+                _prompts = prompts
+            else:
+                _prompts = [self.generate_prompt for _ in range(batch_size)]
             
             latents = self.pipe(
-                [self.generate_prompt for _ in range(batch_size)],
+                _prompts,
                 latents=prior.type(torch.float16),
                 output_type="latent",
                 given_noise=given_noise,
@@ -204,7 +211,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32, generator=generator)
         
         L = 1 + self.current_epoch
-        images_list, latents, epsilon, pred_y_list = self.finetune_and_generate(epsilon, L, batch_size)
+        images_list, latents, epsilon, pred_y_list = self.finetune_and_generate(epsilon, L, batch_size, prompts=self.validation_generate_prompt)
         self.log_images(images_list[-1], stage="validation")
 
         scores, texts = self.get_scores(images_list[-1])        
