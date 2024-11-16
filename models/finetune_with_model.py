@@ -114,6 +114,8 @@ class FinetuneDiffusionWithModel(DiffusionBase):
                 callback_steps=1,
             ).images
 
+            self.guidance_model.update_model_data(self.data_x, self.data_y)
+
             pred_y, derivative_y = self.guidance_model.derivative_y_wrt_x(latents.type(torch.float32))
 
             epsilon -= self.alpha * derivative_y
