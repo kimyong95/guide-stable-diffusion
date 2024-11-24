@@ -4,3 +4,6 @@
 [submodule "related_works/targetdiff"]
 	path = related_works/targetdiff
 	url = https://github.com/kimyong95/targetdiff.git
+[submodule "related_works/Direct-Noise-Optimization"]
+	path = related_works/Direct-Noise-Optimization
+	url = https://github.com/kimyong95/Direct-Noise-Optimization.git
