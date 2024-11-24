@@ -24,30 +24,37 @@ pipeline.enable_vae_slicing()
 pipeline = pipeline.to(device)
 
 name_to_prompts_map = {
-    "cyberdog": "A natural fluffy dog talking to a cybertic dog.",
-    "puppynose": "Side view of a puppy lying on floor, one butterfly stopping on its nose.",
-    "robotplant": "A cute cybernetic robot plants a tree in the forest.",
-    "ocean": "A helicopter floating under the ocean.",
-    "sandglass": "A transparent glass filled with a mixture of water and sand, with one feather floating inside.",
-    "penguin": "A photo realistic photo showing a penguin standing on a very small floating ice, with a tree is on fire in the background.",
-    "basket": "Exactly one orange in a basket of apples.",
-    "catbutterfly": "A cat with butterfly wings.",
-    "icecube": "A glass of water with exactly one ice cube.",
-    "logo": "A board saying \"QOBG\".",
-    "trafficlight": "A traffic light with yellow at top, green at middle, and red at bottom.",
-    "deerelephant": "A yellow reindeer and a blue elephant.",
-    "apple": "Seven red apples arranged in a circle.",
+    "cyberdog": ["A natural fluffy dog talking to a cybertic dog."] * 16,
+    "puppynose": ["Side view of a puppy lying on floor, one butterfly stopping on its nose."] * 16,
+    "robotplant": ["A cute cybernetic robot plants a tree in the forest."] * 16,
+    "ocean": ["A helicopter floating under the ocean."] * 16,
+    "sandglass": ["A transparent glass filled with a mixture of water and sand, with one feather floating inside."] * 16,
+    "penguin": ["A photo realistic photo showing a penguin standing on a very small floating ice, with a tree is on fire in the background."] * 16,
+    "basket": ["Exactly one orange in a basket of apples."] * 16,
+    "catbutterfly": ["A cat with butterfly wings."] * 16,
+    "icecube": ["A glass of water with exactly one ice cube."] * 16,
+    "trafficlight": ["A traffic light with yellow at top, green at middle, and red at bottom."] * 16,
+    "deerelephant": ["A yellow reindeer and a blue elephant."] * 16,
+    "apple": ["Seven red apples arranged in a circle."] * 16,
+    "compress": ["elephant", "eagle", "pigeon", "hippo", "hamster", "otter", "panda", "reindeer", "owl", "penguin", "flamingo", "seal", "koala", "giraffe", "parrot", "cheetah"],
+    "incompress": ["elephant", "eagle", "pigeon", "hippo", "hamster", "otter", "panda", "reindeer", "owl", "penguin", "flamingo", "seal", "koala", "giraffe", "parrot", "cheetah"],
+    "aesthetic": ["elephant", "eagle", "pigeon", "hippo", "hamster", "otter", "panda", "reindeer", "owl", "penguin", "flamingo", "seal", "koala", "giraffe", "parrot", "cheetah"],
 }
 
+
 algos = ["ddpo", "dpok", "d3po"]
-names = ["deerelephant", "trafficlight", "apple", "cyberdog", "puppynose", "robotplant", "ocean", "sandglass", "penguin", "basket", "icecube", "catbutterfly"]
-names = ["catbutterfly"]
+names = [
+    "deerelephant", "trafficlight", "apple", "cyberdog", "puppynose", "robotplant", "ocean", "sandglass", "penguin", "basket", "icecube", "catbutterfly", \
+    "compress", "incompress", "aesthetic",
+]
+
+names = ["compress", "incompress", "aesthetic"]
 
 def run_name(algo,name):
     return f"{algo}-{name}"
 
 for name in names: 
-    eval_prompts = [name_to_prompts_map[name]]*16
+    eval_prompts = name_to_prompts_map[name]
     eval_generator = torch.Generator(device=device)
     eval_generator.manual_seed(1)
     eval_images, _, _, _ = pipeline_with_logprob(
@@ -62,7 +69,7 @@ for name in names:
     )
     for i, image in enumerate(eval_images):
         pil = Image.fromarray((image.cpu().numpy().transpose(1, 2, 0) * 255).astype(np.uint8))
-        pil = pil.resize((256, 256))
+        pil = pil.resize((512, 512))
         dir_ = f"results/ppo-pretrain-images/{name}"
         os.makedirs(dir_, exist_ok=True)
         pil.save(f"{dir_}/{i}.jpeg")

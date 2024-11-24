@@ -66,11 +66,11 @@ class GpGuidanceModel(nn.Module):
 
                 xj.requires_grad = False
 
-            y_pred.append(mean.detach())
-            y_grad.append(grad.detach())
+            y_pred.append(mean.detach().cpu())
+            y_grad.append(grad.detach().cpu())
 
-        y_pred = torch.stack(y_pred)
-        y_grad = torch.stack(y_grad)
+        y_pred = torch.stack(y_pred).to(device)
+        y_grad = torch.stack(y_grad).to(device)
 
         y_grad = self._x_unflatten(y_grad)
 

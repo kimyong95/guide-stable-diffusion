@@ -3,8 +3,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pickle
-from palettable.colorbrewer.qualitative import Dark2_4
-colors = Dark2_4.mpl_colors
+import seaborn as sns
+
+colors = sns.color_palette("hls", 8)
+
+color_map = {
+    "ours": colors[7],
+    "ours-ddim": colors[6],
+
+    "dno":  colors[1],
+    "ddpo": colors[2],
+    "dpok": colors[3],
+    "d3po": colors[4],
+}
 
 cache_path = "results-molecules/history_cache.pkl"
 with open(cache_path, 'rb') as f:
@@ -69,18 +80,19 @@ for row in range(2):
                 if x in score_dict[run_name_]    
             ]
             label = algo_label_map[algo] if index == 0 else None
-            ax.plot(figure_x+1, y, label=label, color=colors[algo_i])
+            linewidth = 1.5 if algo in ["ours","ours-ddim"] else 1.5
+            ax.plot(figure_x+1, y, label=label, color=color_map[algo], linewidth=linewidth)
             ax.set_xlim(0, 50)
         
         ax.grid(linewidth=0.5, linestyle='--', alpha=0.5)
         ax.set_title(f"Task-{index+1} ({task_name[index]})")
 
-text_x = fig.text(0.5, -0.1 / fig.get_figheight(), 'Number of Batch Queries', ha='center', fontsize=16)
+text_x = fig.text(0.5, -0.1 / fig.get_figheight(), 'Number of Batch Feedbacks', ha='center', fontsize=16)
 text_y = fig.text(-0.1 / fig.get_figwidth(), 0.5, 'Vina Score (kcal/mol)', va='center', rotation='vertical', fontsize=16)
 
 legend = fig.legend(loc='lower center', ncol=4, bbox_to_anchor=(0.5, -0.6 / fig.get_figheight()))
 plt.tight_layout()
-plt.savefig("results-molecules/figure.jpeg", dpi=600, bbox_inches='tight', bbox_extra_artists=(legend,text_x,text_y))
+plt.savefig("results-molecules/figure.jpeg", dpi=600, bbox_inches='tight', bbox_extra_artists=(legend,text_x,text_y), format='jpeg', pil_kwargs={"quality":50})
 
 
 ###################### plot accumanlative ######################
@@ -103,7 +115,8 @@ for index in range(len(long_names)):
         y = [ score_dict[run_name_][x] for x in figure_x ]
         y_acum = np.minimum.accumulate(np.asarray(y))
         label = algo_label_map[algo] if index == 0 else None
-        ax.step(figure_x+1, y_acum, label=label, color=colors[algo_i], where='post', linewidth=1.0)
+        linewidth = 1.5 if algo in ["ours","ours-ddim"] else 1.5
+        ax.step(figure_x+1, y_acum, label=label, color=color_map[algo], where='post', linewidth=linewidth)
         ax.set_xlim(0, len(figure_x))
         ax.set_ylim(ours_y_min, 0.0)
 
@@ -117,7 +130,7 @@ for index in range(len(long_names)):
             ax.plot(
                 [our_id_surpass_baseline+1, 200],
                 [baseline_min, baseline_min],
-                color=colors[algo_i],
+                color=color_map[algo],
                 linewidth=0.5,
                 linestyle='--'
             )
@@ -126,18 +139,18 @@ for index in range(len(long_names)):
             ax.plot(
                 [our_id_surpass_baseline+1, our_id_surpass_baseline+1],
                 [baseline_min, ours_y_min],
-                color=colors[algo_i],
+                color=color_map[algo],
                 linewidth=0.5,
                 linestyle='--'
             )
 
     ax.set_title(f"Task-{index+1} ({task_name[index]})")
 
-text_x = fig.text(0.5, -0.1 / fig.get_figheight(), 'Number of Batch Queries', ha='center', fontsize=14)
+text_x = fig.text(0.5, -0.1 / fig.get_figheight(), 'Number of Batch Feedbacks', ha='center', fontsize=14)
 text_y = fig.text(-0.1 / fig.get_figwidth(), 0.5, 'Accumalated Vina Score', va='center', rotation='vertical', fontsize=14)
 
 legend = fig.legend(loc='lower center', ncol=4, bbox_to_anchor=(0.5, -0.6 / fig.get_figheight()))
 plt.tight_layout()
-plt.savefig("results-molecules/figure_acum.jpeg", dpi=600, bbox_inches='tight', bbox_extra_artists=(legend,text_x,text_y))
+plt.savefig("results-molecules/figure_acum.jpeg", dpi=600, bbox_inches='tight', bbox_extra_artists=(legend,text_x,text_y), format='jpeg', pil_kwargs={"quality":50})
 
 ###################### plot accumanlative ######################

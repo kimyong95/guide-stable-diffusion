@@ -1282,7 +1282,12 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     latents = step_output.prev_sample
                     pred_original_sample = step_output.pred_original_sample
                 elif isinstance(self.scheduler, DDIMScheduler):
-                    latents = self.scheduler.step(noise_pred, t, latents, variance_noise=_given_noise, **extra_step_kwargs, return_dict=False)[0]
+                    _extra_step_kwargs = extra_step_kwargs.copy()
+                    if _given_noise is not None:
+                        _extra_step_kwargs.pop("generator", None)
+                    step_output = self.scheduler.step(noise_pred, t, latents, variance_noise=_given_noise, **_extra_step_kwargs, return_dict=True)
+                    latents = step_output.prev_sample
+                    pred_original_sample = step_output.pred_original_sample
                 else:
                     raise NotImplementedError(f"Scheduler {self.scheduler} is not supported.")
                 # ↑↑↑↑↑↑↑↑↑↑ edited ↑↑↑↑↑↑↑↑↑↑ #

@@ -28,6 +28,7 @@ model:
     sd_model: sdxl-lightning
     training_batch_size: 32
     validation_batch_size: 16
+    validation_load_epsilon: results/epsilons/all.pt
     alpha: 80 # guidance step
     reg_mode: "projection"
     reg: 1e-3
