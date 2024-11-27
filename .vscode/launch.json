@@ -19,7 +19,7 @@
             "args": [
                 "fit",
                 "--config", "configs/finetune_with_model.yaml",
-                "--config", "configs/debug.yaml",
+                "--model.init_args.compile=False",
             ]
         },
         {
