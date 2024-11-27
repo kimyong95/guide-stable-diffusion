@@ -5,6 +5,8 @@ import os
 api = wandb.Api()
 
 wandb_path = "kimyong95/finetune-stable-diffusion"
+dir_path = os.path.dirname(os.path.realpath(__file__))
+
 
 def run_name(algo,name):
     
@@ -51,7 +53,7 @@ names = ["cyberdog", "puppynose", "robotplant", "ocean", "sandglass", "penguin",
 sr_names = ["compress", "incompress", "aesthetic"]
 
 # load cache
-cache_path = "results/wandb_cache.pkl"
+cache_path = f"{dir_path}/wandb_cache.pkl"
 if os.path.exists(cache_path):
     with open(cache_path, 'rb') as f:
         wandb_cache = pickle.load(f)

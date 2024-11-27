@@ -5,6 +5,9 @@ import numpy as np
 import pickle
 import re
 import seaborn as sns
+import os
+
+dir_path = os.path.dirname(os.path.realpath(__file__))
 
 colors = sns.color_palette("hls", 8)
 
@@ -28,7 +31,7 @@ zorder_map = {
     "d3po": 1,
 }
 
-cache_path = "results/wandb_cache.pkl"
+cache_path = f"{dir_path}/wandb_cache.pkl"
 with open(cache_path, 'rb') as f:
     wandb_cache = pickle.load(f)
 
@@ -241,7 +244,7 @@ text_y = fig.text(-0.1 / fig.get_figwidth(), 0.5, 'Gemini Rating', va='center', 
 
 legend = fig.legend(loc='lower center', ncol=6, bbox_to_anchor=(0.5, -0.6 / fig.get_figheight()))
 plt.tight_layout()
-plt.savefig("results/figure.jpeg", dpi=600, bbox_inches='tight', bbox_extra_artists=(legend,text_x,text_y), format='jpeg', pil_kwargs={"quality":50})
+plt.savefig(f"{dir_path}/figure.jpeg", dpi=600, bbox_inches='tight', bbox_extra_artists=(legend,text_x,text_y), format='jpeg', pil_kwargs={"quality":50})
 ######################## main plot #########################
 
 
@@ -290,7 +293,7 @@ text_x = fig.text(0.5, -0.1 / fig.get_figheight(), 'Number of Batch Queries', ha
 
 legend = fig.legend(loc='lower center', ncol=6, bbox_to_anchor=(0.5, -0.6 / fig.get_figheight()))
 plt.tight_layout()
-plt.savefig("results/figure-sr.jpeg", dpi=600, bbox_inches='tight', bbox_extra_artists=(legend,text_x,text_y), format='jpeg', pil_kwargs={"quality":50})
+plt.savefig(f"{dir_path}/figure-sr.jpeg", dpi=600, bbox_inches='tight', bbox_extra_artists=(legend,text_x,text_y), format='jpeg', pil_kwargs={"quality":50})
 
 ######################## simple reward #########################
 
@@ -408,7 +411,7 @@ text_y = fig.text(-0.1 / fig.get_figwidth(), 0.5, 'Accumalated Gemini Rating', v
 
 legend = fig.legend(loc='lower center', ncol=6, bbox_to_anchor=(0.5, -0.6 / fig.get_figheight()))
 plt.tight_layout()
-plt.savefig("results/figure_acum.jpeg", dpi=600, bbox_inches='tight', bbox_extra_artists=(legend,text_x,text_y), format='jpeg', pil_kwargs={"quality":50})
+plt.savefig(f"{dir_path}/figure_acum.jpeg", dpi=600, bbox_inches='tight', bbox_extra_artists=(legend,text_x,text_y), format='jpeg', pil_kwargs={"quality":50})
 
 
 ###################### plot accumanlative ######################
@@ -462,7 +465,7 @@ axs[2].set_xlabel("Batch Size")
 axs[2].set_ylabel("Run Time (Hours)")
 # Save the figure
 plt.tight_layout()
-plt.savefig("results/ablation.jpeg", dpi=600, format='jpeg', pil_kwargs={"quality":50})
+plt.savefig(f"{dir_path}/ablation.jpeg", dpi=600, format='jpeg', pil_kwargs={"quality":50})
 
 
 pass

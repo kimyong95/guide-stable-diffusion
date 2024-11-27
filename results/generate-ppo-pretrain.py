@@ -12,6 +12,8 @@ from PIL import Image
 import numpy as np
 import os
 
+dir_path = os.path.dirname(os.path.realpath(__file__))
+
 device = torch.device("cuda")
 
 model_id = "stabilityai/stable-diffusion-xl-base-1.0"
@@ -70,6 +72,6 @@ for name in names:
     for i, image in enumerate(eval_images):
         pil = Image.fromarray((image.cpu().numpy().transpose(1, 2, 0) * 255).astype(np.uint8))
         pil = pil.resize((512, 512))
-        dir_ = f"results/ppo-pretrain-images/{name}"
+        dir_ = f"{dir_path}/ppo-pretrain-images/{name}"
         os.makedirs(dir_, exist_ok=True)
         pil.save(f"{dir_}/{i}.jpeg")

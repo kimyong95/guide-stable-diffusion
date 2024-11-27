@@ -19,6 +19,8 @@ import wandb
 from enum import Enum
 import argparse
 
+dir_path = os.path.dirname(os.path.realpath(__file__))
+
 # Create a parser object
 parser = argparse.ArgumentParser(description="A script to demonstrate taking arguments.")
 parser.add_argument("--demo-id", type=int, default=0, help="Demo ID.")
@@ -101,7 +103,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 
-cache_path = "results/wandb_cache.pkl"
+cache_path = f"{dir_path}/wandb_cache.pkl"
 with open(cache_path, 'rb') as f:
     wandb_cache = pickle.load(f)
 
@@ -119,7 +121,7 @@ from pptx.util import Inches
 from pptx.util import Pt
 from pptx.enum.shapes import PP_PLACEHOLDER
 
-ppt = Presentation("results/visualize/visualize-template.pptx")
+ppt = Presentation(f"{dir_path}/visualize/visualize-template.pptx")
 
 # sorted x, y
 def get_placeholders(slide):
@@ -267,28 +269,28 @@ for algo in algos:
         # save first steps
         copy_compress(
             src=f"{path}/ablation/train/{includes_epoches[-1]}/l=0.jpg",
-            dest=f"results/{algo}-init/{index}.jpeg",
-            dest_compress=f"results/{algo}-init-compress/{index}.jpeg"
+            dest=f"{dir_path}/{algo}-init/{index}.jpeg",
+            dest_compress=f"{dir_path}/{algo}-init-compress/{index}.jpeg"
         )
 
         # save final steps
         copy_compress(
             src=f"{path}/ablation/train/{includes_epoches[-1]}/l={includes_epoches[-1]}.jpg",
-            dest=f"results/{algo}-final/{index}.jpeg",
-            dest_compress=f"results/{algo}-final-compress/{index}.jpeg"
+            dest=f"{dir_path}/{algo}-final/{index}.jpeg",
+            dest_compress=f"{dir_path}/{algo}-final-compress/{index}.jpeg"
         )
 
         # copy validation
         if name in sr_names:
             copy_compress(
                 src=f"{path}/ablation/validation/{includes_epoches[-1]}/l=0.jpg",
-                dest=f"results/{algo}-init/{index}-val.jpeg",
-                dest_compress=f"results/{algo}-init-compress/{index}-val.jpeg"
+                dest=f"{dir_path}/{algo}-init/{index}-val.jpeg",
+                dest_compress=f"{dir_path}/{algo}-init-compress/{index}-val.jpeg"
             )
             copy_compress(
                 src=f"{path}/ablation/validation/{includes_epoches[-1]}/l={includes_epoches[-1]}.jpg",
-                dest=f"results/{algo}-final/{index}-val.jpeg",
-                dest_compress=f"results/{algo}-final-compress/{index}-val.jpeg"
+                dest=f"{dir_path}/{algo}-final/{index}-val.jpeg",
+                dest_compress=f"{dir_path}/{algo}-final-compress/{index}-val.jpeg"
             )        
         
         for _demo_id in demo_ids:
@@ -354,14 +356,14 @@ for algo in algos:
         for _demo_id in demo_ids:
 
             # load pre-train image
-            images_list = [Image.open(f"results/ppo-pretrain-images/{name}/{_demo_id}.jpeg")]
+            images_list = [Image.open(f"{dir_path}/ppo-pretrain-images/{name}/{_demo_id}.jpeg")]
             
             image_ = wandb_cache[_cache_key]["history"]["validation/images"]
             image_k = wandb_cache[_cache_key]["history"][image_.notnull()]["epoch"].values.tolist()
             image_v = image_[image_.notnull()].values.tolist()
             image_dict = dict(zip(image_k, image_v))
 
-            image_dir = f"results/wandb-images/{_cache_key}"
+            image_dir = f"{dir_path}/wandb-images/{_cache_key}"
 
             if name_slide_layout_map[name] in [LAYOUT_NAME.LONG, LAYOUT_NAME.SR]:
                 epoches = [9,19,29,39,49,499]
@@ -392,7 +394,7 @@ for algo in algos:
 
 ##################### baselines ######################
 
-with open('results/visualize/missing.txt', 'a') as f:
+with open(f'{dir_path}/visualize/missing.txt', 'a') as f:
     for item in missing:
         f.write(f"{item}\n")
 
@@ -413,7 +415,7 @@ algo_label_map = {
     ]
 }
 
-three_dots = Image.open("results/assets/three-dots.jpg")
+three_dots = Image.open(f"{dir_path}/assets/three-dots.jpg")
 for name in names:
     demo_ids = name_demo_ids_map[name]
     for i, _demo_id in enumerate(demo_ids):
@@ -443,6 +445,6 @@ for name in names:
             slide_texts.extend([algo_label_map[algo]])
 
         fill_contents(slide, slide_images, slide_texts)
-ppt.save(f"results/visualize/visualize.pptx")
+ppt.save(f"{dir_path}/visualize/visualize.pptx")
 
 ################### create slides ####################
