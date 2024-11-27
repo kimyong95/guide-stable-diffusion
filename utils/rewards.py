@@ -113,7 +113,7 @@ class InCompressibility(Compressibility):
 class GeminiQuestion(RewardBase):
     def __init__(self):
         self.target_embedding_cache = {}
-        self.model = genai.GenerativeModel(model_name="gemini-1.5-flash-001")
+        self.model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
         self.cos_sim = torch.nn.CosineSimilarity(dim=1, eps=1e-6)
 
