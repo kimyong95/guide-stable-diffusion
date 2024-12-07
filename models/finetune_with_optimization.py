@@ -26,7 +26,7 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 class FinetuneDiffusionWithOptimization(DiffusionBase):
 
     def __init__(self, lr, projection, training_batch_size, validation_batch_size, compile, evaluate_intermidiate_steps, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value):
-        super().__init__(sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, compile)
+        super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompt, max_reward_value, compile)
 
         self.lr = lr
         self.projection = projection
@@ -49,7 +49,14 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
 
         batch_sigma = einops.repeat(self.sigma, 'T D -> T B D', B=batch_size)
 
-        batch_noise_original = torch.randn(batch_mu.size(), device=self.device, generator=generator)
+        # to make sure noise generation same as baselines (DDPO,DPOK) for consistance comparison
+        batch_noise_original = []
+        for t in range(batch_mu.size()[0]):
+            batch_noise_original.append(
+                torch.randn(batch_mu.size()[1:], device=self.device, generator=generator)
+            )
+        batch_noise_original = torch.stack(batch_noise_original)
+        # batch_noise_original = torch.randn(batch_mu.size(), device=self.device, generator=generator)
 
         batch_noise = batch_mu + batch_sigma**0.5 * batch_noise_original
 

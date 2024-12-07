@@ -21,6 +21,7 @@ from safetensors.torch import load_file
 
 from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneStableDiffusion3Pipeline, FinetuneFlowMatchEulerDiscreteScheduler
 from utils.finetune_difussers import FinetuneEulerDiscreteScheduler, FinetuneStableDiffusionXLPipeline
+from diffusers import EulerDiscreteScheduler, DDIMScheduler
 from utils.rewards import GeminiQuestion, Compressibility, InCompressibility, Aesthetic
 from utils.utils import find_closest_factors, disable_train
 
@@ -59,6 +60,16 @@ class DiffusionBase(LightningBase):
             model_id = "stabilityai/stable-diffusion-xl-base-1.0"
             vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
             scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+            self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            self.pipe.enable_vae_slicing()
+            self.pipe.vae.encoder = None
+            self.pipe_model_config = self.pipe.unet.config
+        elif sd_model == "sdxl-ddim":
+            self.num_sampling_steps = 30
+            self.guidance_scale = 7.0
+            model_id = "stabilityai/stable-diffusion-xl-base-1.0"
+            vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
+            scheduler = DDIMScheduler.from_pretrained(model_id, subfolder="scheduler")
             self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
@@ -121,8 +132,20 @@ class DiffusionBase(LightningBase):
                 raise ValueError(f"Invalid type for reward_target_prompt keys: {types}")
         elif type(reward_target_prompt) == list:
             self.pipe.scheduler.set_timesteps(self.num_sampling_steps)
-            init_sigma = self.pipe.scheduler.init_noise_sigma.unsqueeze(dim=0) if hasattr(self.pipe.scheduler,"init_noise_sigma") else torch.tensor([1.0])
-            sigma_cum = torch.cat([init_sigma, self.pipe.scheduler.sigmas[:-1]], dim=0).cumsum(dim=0)
+            if isinstance(self.pipe.scheduler, EulerDiscreteScheduler):
+                init_sigma = self.pipe.scheduler.init_noise_sigma.unsqueeze(dim=0)
+                sigmas = self.pipe.scheduler.sigmas[:-1]
+            elif isinstance(self.pipe.scheduler, DDIMScheduler):
+                init_sigma = torch.tensor([self.pipe.scheduler.init_noise_sigma])
+                sigmas = []
+                for t in self.pipe.scheduler.timesteps:
+                    prev_t = t - self.pipe.scheduler.config.num_train_timesteps // self.pipe.scheduler.num_inference_steps
+                    variance = self.pipe.scheduler._get_variance(t, prev_t)
+                    eta = 1.0
+                    std_dev_t = eta * variance ** (0.5)
+                    sigmas.append(std_dev_t)
+                sigmas = torch.stack(sigmas)
+            sigma_cum = torch.cat([init_sigma, sigmas], dim=0).cumsum(dim=0)
             sigma_cum = sigma_cum / sigma_cum[-1]
 
             reward_k = []
