@@ -112,23 +112,7 @@ class InCompressibility(Compressibility):
 
 class GeminiQuestion(RewardBase):
     def __init__(self):
-        self.target_embedding_cache = {}
-        self.model = genai.GenerativeModel(model_name="gemini-1.5-flash")
-
-        self.cos_sim = torch.nn.CosineSimilarity(dim=1, eps=1e-6)
-
-    def get_target_embedding(self, target_prompt):
-        if target_prompt in self.target_embedding_cache:
-            return self.target_embedding_cache[target_prompt]
-        embedding = genai.embed_content(
-            model="models/text-embedding-004",
-            content=target_prompt,
-        )["embedding"]
-
-        embedding = torch.as_tensor(embedding)
-                
-        self.target_embedding_cache[target_prompt] = embedding
-        return embedding
+        pass
 
     @staticmethod
     @retry(times=10, failed_return=None, exceptions=(ServerError, TooManyRequests, ValueError))
@@ -153,7 +137,7 @@ class GeminiQuestion(RewardBase):
         if not query_prompt:
             question_query = inspect.cleandoc(f"""
                 Does the prompt '{target_prompt}' accurately describe the image? Rate from 1 (inaccurate) to 5 (accurate).
-                Answer in the format: Score=(score), Reason=(reason).
+                Answer in the format: Score=score, Reason=reason.
             """)
         else:
             question_query = query_prompt.format(target_prompt=target_prompt)
@@ -181,7 +165,8 @@ class GeminiQuestion(RewardBase):
         scores = []
         for response in responses:
             match = re.search(r"Score=(\d+)", response)
-            score = int(match.group(1)) if match else 0
+            assert match is not None, f"Invalid response: {response}"
+            score = int(match.group(1))
             scores.append(score)
         scores = torch.as_tensor(scores, device=self.device) / max_reward
 

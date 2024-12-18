@@ -53,6 +53,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
 
         self.register_buffer("data_x", data_x)
         self.register_buffer("data_y", data_y)
+        self.replace_checkpoint_keys = ["data_x", "data_y"]
 
         # dummy parameters for pytorch lightning optimizer to work
         self.dummy = torch.nn.Parameter(torch.zeros(1))

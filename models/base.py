@@ -15,6 +15,7 @@ class LightningBase(L.LightningModule):
     def __init__(self):
         super().__init__()
         self.ignored_checkpoint_keys = []
+        self.replace_checkpoint_keys = []
 
     def on_fit_start(self):
         log_dir = str(self.trainer.logger.experiment.dir).removesuffix("/files")
@@ -67,6 +68,9 @@ class LightningBase(L.LightningModule):
         
         for k in deleted_keys:
             checkpoint["state_dict"][k] = self.state_dict()[k]
+
+        for k in self.replace_checkpoint_keys:
+            setattr(self, k, checkpoint["state_dict"][k])
 
     def on_save_checkpoint(self, checkpoint):
 
