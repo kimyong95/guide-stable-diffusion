@@ -136,25 +136,26 @@ class DiffusionBase(LightningBase):
                 init_sigma = self.pipe.scheduler.init_noise_sigma.unsqueeze(dim=0)
                 sigmas = self.pipe.scheduler.sigmas[:-1]
             elif isinstance(self.pipe.scheduler, DDIMScheduler):
-                init_sigma = torch.tensor([self.pipe.scheduler.init_noise_sigma])
-                sigmas = []
+                init_variance = torch.tensor([self.pipe.scheduler.init_noise_sigma]) ** 2
+                variances = []
                 for t in self.pipe.scheduler.timesteps:
                     prev_t = t - self.pipe.scheduler.config.num_train_timesteps // self.pipe.scheduler.num_inference_steps
                     variance = self.pipe.scheduler._get_variance(t, prev_t)
                     eta = 1.0
-                    std_dev_t = eta * variance ** (0.5)
-                    sigmas.append(std_dev_t)
-                sigmas = torch.stack(sigmas)
-            sigma_cum = torch.cat([init_sigma, sigmas], dim=0).cumsum(dim=0)
-            sigma_cum = sigma_cum / sigma_cum[-1]
+                    variance_t = eta * variance
+                    variances.append(variance_t)
+                variances = torch.stack(variances)
+            var_cum = torch.cat([init_variance, variances], dim=0).cumsum(dim=0)
+            var_cum = var_cum / var_cum[-1]
 
             reward_k = []
             delta = 1 / len(reward_target_prompt)
             for i in range(1, len(reward_target_prompt)):
-                k = (sigma_cum >= i * delta).nonzero()[0].item()
+                k = (var_cum < i * delta).nonzero()[-1].item()
                 reward_k.append(k)
             reward_k.append(self.num_sampling_steps)
             self.reward_target_prompt = { k: v for k, v in zip(reward_k, reward_target_prompt) }
+
 
         assert reward_func in REWAED_FUNC
         self.reward_func = REWAED_FUNC[reward_func]()

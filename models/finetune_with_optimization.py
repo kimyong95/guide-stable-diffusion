@@ -141,47 +141,22 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
             callback_on_step_end=callback_func,
         ).images
 
-        texts_trajectory = []
-        images_trajectory = []
-
+        evaluated_steps = list(self.reward_target_prompt.keys())
         scores = torch.zeros((self.num_sampling_steps+1, batch_size), device=self.device)
 
-        if bool(self.evaluate_intermidiate_steps):
-            if type(self.evaluate_intermidiate_steps) == bool:
-                evaluation_steps = list(range(self.num_sampling_steps))
-            if type(self.evaluate_intermidiate_steps) == int:
-                evaluation_steps = list(range(0, self.num_sampling_steps, self.evaluate_intermidiate_steps))
-        else:
-            rewards_steps = list(self.reward_target_prompt.keys())
-            evaluation_steps = list(set(rewards_steps) - {self.num_sampling_steps})
-            evaluation_steps.sort()
+        texts_list = []
+        images_list = []
+
+        for i, (step, _) in enumerate(self.reward_target_prompt.items()):
+            score, text = self.get_scores(images_final, step)
+            scores[step] = score
+            texts_list.append(text)
+            images_list.append(images_final)
+
+            self.log(f"score_x3_f{i}_mean", score.mean())
         
-        # xt -> xT, fot t in evaluation_steps
-        for i in evaluation_steps:
-            images_i = self.pipe(
-                [self.generate_prompt]*batch_size,
-                output_type="pil",
-                start_at_i=i,
-                start_at_i_latents=latents_trajectory[i] if i > 0 else None,
-                latents=prior.type(torch.float16),
-                num_inference_steps=self.num_sampling_steps,
-                guidance_scale=self.guidance_scale,
-            ).images
-
-            scores_i, texts_i = self.get_scores(images_i, i)
-
-            scores[i] = scores_i
-
-            self.log(f"train/score_{i}_mean", scores_i.mean())
-
-            images_trajectory.append(images_i)
-            texts_trajectory.append(texts_i)
-        
-        scores_final, texts_final = self.get_scores(images_final)
-        self.log_score(scores_final, stage="train")
-        scores[-1] = scores_final
-
-        evaluated_steps = evaluation_steps + [self.num_sampling_steps]
+        self.log_images(images_final, stage="train")
+        self.log_score(scores[-1], stage="train")
 
         # fill scores by future timestep
         for i in range(self.num_sampling_steps):
@@ -189,14 +164,8 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
                 next_i = evaluated_steps[bisect.bisect_right(evaluated_steps,i)]
                 scores[i] = scores[next_i]
 
-        images_trajectory.append(images_final)
-        texts_trajectory.append(texts_final)
-
-        self.log_images(images_trajectory[-1], stage="train")
-
-        
         self.log_params(self.mu, self.sigma)
-        self.log_ablation(images_list=images_trajectory, texts_list=texts_trajectory, scores_list=scores[evaluated_steps], stage="train")
+        self.log_ablation(images_list=images_list, texts_list=texts_list, scores_list=scores[evaluated_steps], stage="train")
 
         self.update_parameters(self._x_flatten(epsilon), scores)
         
