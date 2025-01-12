@@ -164,6 +164,10 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
                 next_i = evaluated_steps[bisect.bisect_right(evaluated_steps,i)]
                 scores[i] = scores[next_i]
 
+        # fill scores by mean
+        # scores_mean = scores[evaluated_steps].mean(0)
+        # scores[:] = scores_mean[None,:]
+
         self.log_params(self.mu, self.sigma)
         self.log_ablation(images_list=images_list, texts_list=texts_list, scores_list=scores[evaluated_steps], stage="train")
 
