@@ -23,7 +23,7 @@ colors = Dark2_4.mpl_colors
 
 from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
-class FinetuneDiffusionWithOptimization(DiffusionBase):
+class GuideDiffusionWithOptimization(DiffusionBase):
 
     def __init__(self, lr, projection, training_batch_size, validation_batch_size, compile, evaluate_intermidiate_steps, sd_model, generate_prompt, reward_query_prompt, reward_target_prompts, reward_func, max_reward_value):
         super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompts, max_reward_value, compile)

@@ -19,8 +19,8 @@ from diffusers import StableDiffusionXLPipeline, AutoencoderKL, UNet2DConditionM
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
 
-from utils.finetune_difussers import FinetuneStableDiffusionPipeline, FinetuneStableDiffusion3Pipeline, FinetuneFlowMatchEulerDiscreteScheduler
-from utils.finetune_difussers import FinetuneEulerDiscreteScheduler, FinetuneStableDiffusionXLPipeline
+from utils.guide_difussers import GuideStableDiffusionPipeline, GuideStableDiffusion3Pipeline, GuideFlowMatchEulerDiscreteScheduler
+from utils.guide_difussers import GuideEulerDiscreteScheduler, GuideStableDiffusionXLPipeline
 from diffusers import EulerDiscreteScheduler, DDIMScheduler
 from utils.rewards import GeminiQuestion, Compressibility, InCompressibility, Aesthetic
 from utils.utils import find_closest_factors, disable_train
@@ -42,16 +42,16 @@ class DiffusionBase(LightningBase):
             self.num_sampling_steps = 50
             self.guidance_scale = 7.0
             model_id = "stabilityai/stable-diffusion-2-1-base"
-            scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
-            self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            scheduler = GuideEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+            self.pipe = GuideStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe_model_config = self.pipe.unet.config
         elif sd_model == "sd2-turbo":
             self.num_sampling_steps = 4
             self.guidance_scale = 0.0
             model_id = "stabilityai/sd-turbo"
-            scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
-            self.pipe = FinetuneStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            scheduler = GuideEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+            self.pipe = GuideStableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe_model_config = self.pipe.unet.config
         elif sd_model == "sdxl":
@@ -59,8 +59,8 @@ class DiffusionBase(LightningBase):
             self.guidance_scale = 7.0
             model_id = "stabilityai/stable-diffusion-xl-base-1.0"
             vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
-            scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
-            self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            scheduler = GuideEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+            self.pipe = GuideStableDiffusionXLPipeline.from_pretrained(model_id, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
             self.pipe_model_config = self.pipe.unet.config
@@ -70,7 +70,7 @@ class DiffusionBase(LightningBase):
             model_id = "stabilityai/stable-diffusion-xl-base-1.0"
             vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
             scheduler = DDIMScheduler.from_pretrained(model_id, subfolder="scheduler")
-            self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            self.pipe = GuideStableDiffusionXLPipeline.from_pretrained(model_id, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
             self.pipe_model_config = self.pipe.unet.config
@@ -81,8 +81,8 @@ class DiffusionBase(LightningBase):
             unet = UNet2DConditionModel.from_pretrained(model_id, subfolder="unet", torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             unet.load_state_dict(load_file(hf_hub_download("ByteDance/SDXL-Lightning", "sdxl_lightning_8step_unet.safetensors")))
             vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
-            scheduler = FinetuneEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler", timestep_spacing="trailing")
-            self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, unet=unet, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            scheduler = GuideEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler", timestep_spacing="trailing")
+            self.pipe = GuideStableDiffusionXLPipeline.from_pretrained(model_id, unet=unet, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
             self.pipe_model_config = self.pipe.unet.config
@@ -94,7 +94,7 @@ class DiffusionBase(LightningBase):
             unet.load_state_dict(load_file(hf_hub_download("ByteDance/SDXL-Lightning", "sdxl_lightning_8step_unet.safetensors")))
             vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
             scheduler = DDIMScheduler.from_pretrained(model_id, subfolder="scheduler", timestep_spacing="trailing")
-            self.pipe = FinetuneStableDiffusionXLPipeline.from_pretrained(model_id, unet=unet, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            self.pipe = GuideStableDiffusionXLPipeline.from_pretrained(model_id, unet=unet, vae=vae, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.enable_vae_slicing()
             self.pipe.vae.encoder = None
             self.pipe_model_config = self.pipe.unet.config
@@ -102,8 +102,8 @@ class DiffusionBase(LightningBase):
             self.num_sampling_steps = 28
             self.guidance_scale = 7.0
             model_id = "stabilityai/stable-diffusion-3-medium-diffusers"
-            scheduler = FinetuneFlowMatchEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
-            self.pipe = FinetuneStableDiffusion3Pipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+            scheduler = GuideFlowMatchEulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+            self.pipe = GuideStableDiffusion3Pipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
             self.pipe.vae.enable_slicing()
             self.pipe.vae.encoder = None
             self.pipe_model_config = self.pipe.transformer.config

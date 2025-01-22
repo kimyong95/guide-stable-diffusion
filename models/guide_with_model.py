@@ -23,7 +23,7 @@ colors = Dark2_4.mpl_colors
 
 from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
-class FinetuneDiffusionWithModel(DiffusionBase):
+class GuideDiffusionWithModel(DiffusionBase):
 
     def __init__(self, guidance_model, sd_model, generate_prompt, training_batch_size, validation_batch_size, alpha, reward_func, reg_mode, reg, validation_generate_prompt=None, max_reward_value=None, reward_query_prompt=None, reward_target_prompt=None, compile=False, validation_load_epsilon=None):
         super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompt, max_reward_value, compile)
@@ -68,7 +68,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         epsilon_init = epsilon.clone()
 
         L = 1 + self.current_epoch
-        images_list, latents, epsilon, pred_y_list = self.finetune_and_generate(epsilon, L, batch_size)
+        images_list, latents, epsilon, pred_y_list = self.guide_and_generate(epsilon, L, batch_size)
         self.log_params((epsilon-epsilon_init).mean(dim=[0,1]))
 
         self.log_images(images_list[-1], stage="train")
@@ -84,7 +84,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
         self.optimizers().step()
 
     @torch.no_grad()
-    def finetune_and_generate(self, epsilon, L, batch_size, prompts=None):
+    def guide_and_generate(self, epsilon, L, batch_size, prompts=None):
         
         epsilon = epsilon.clone()
         epsilon_init = epsilon.clone()
@@ -214,7 +214,7 @@ class FinetuneDiffusionWithModel(DiffusionBase):
             epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.channels, self.sample_size, self.sample_size], device=self.device, dtype=torch.float32, generator=generator)
         
         L = 1 + self.current_epoch
-        images_list, latents, epsilon, pred_y_list = self.finetune_and_generate(epsilon, L, batch_size, prompts=self.validation_generate_prompt)
+        images_list, latents, epsilon, pred_y_list = self.guide_and_generate(epsilon, L, batch_size, prompts=self.validation_generate_prompt)
         self.log_images(images_list[-1], stage="validation")
 
         scores, texts = self.get_scores(images_list[-1])        

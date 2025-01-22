@@ -10,7 +10,7 @@ import os
 
 import torch
 from diffusers import StableDiffusionXLPipeline, UNet2DConditionModel, EulerDiscreteScheduler
-from utils.finetune_difussers import FinetuneEulerDiscreteScheduler, FinetuneStableDiffusionXLPipeline
+from utils.guide_difussers import FinetuneEulerDiscreteScheduler, FinetuneStableDiffusionXLPipeline
 
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file

@@ -19,11 +19,11 @@ from palettable.colorbrewer.qualitative import Dark2_4
 colors = Dark2_4.mpl_colors
 
 from models.guidance_models import GpGuidanceModel, NnGuidanceModel, SelectBestModel
-from models.finetune_with_model import FinetuneDiffusionWithModel
+from models.guide_with_model import GuideDiffusionWithModel
 from models.targetdiff_base import TargetdiffBase
 import asyncio
 
-class FinetuneTargetdiffWithModel(TargetdiffBase):
+class GuideTargetdiffWithModel(TargetdiffBase):
 
     def __init__(self, guidance_model, training_batch_size, validation_batch_size, alpha, reg_mode, reg, data_id, pos_only, vina_web_url, scheduler):
         super().__init__(data_id=data_id, pos_only=pos_only, vina_web_url=vina_web_url, scheduler=scheduler)
@@ -67,7 +67,7 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
         epsilon_init = epsilon.clone()
 
         L = 1 + self.current_epoch
-        pred_pos, pred_v, epsilon = self.finetune_and_generate(epsilon, L, batch_size)
+        pred_pos, pred_v, epsilon = self.guide_and_generate(epsilon, L, batch_size)
         self.log_params((epsilon-epsilon_init).mean(dim=[0,1]))
 
         scores, failed_count = self.get_scores_parallel(pred_pos, pred_v)
@@ -81,7 +81,7 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
         self.log(f"train/failed_rate", float(failed_count) / batch_size)
     
     @torch.no_grad()
-    def finetune_and_generate(self, epsilon, L, batch_size):
+    def guide_and_generate(self, epsilon, L, batch_size):
         
         epsilon = epsilon.clone()
         epsilon_init = epsilon.clone()
@@ -139,7 +139,7 @@ class FinetuneTargetdiffWithModel(TargetdiffBase):
         generator = torch.Generator(device=self.device).manual_seed(1)
         epsilon = torch.randn([self.num_sampling_steps+1, batch_size, self.num_atoms, self.dim], device=self.device, dtype=torch.float32, generator=generator)
         L = 1 + self.current_epoch
-        pred_pos, pred_v, epsilon = self.finetune_and_generate(epsilon, L, batch_size)
+        pred_pos, pred_v, epsilon = self.guide_and_generate(epsilon, L, batch_size)
 
         scores, failed_count = self.get_scores_parallel(pred_pos, pred_v)
         self.log_score(scores, stage="validation")

@@ -8,8 +8,8 @@ trainer:
   logger:
     class_path: WandbLogger
     init_args:
-      project: finetune-targetdiff
-      name: finetune-targetdiff # finetune-targetdiff-with-model
+      project: guide-targetdiff
+      name: guide-targetdiff # guide-targetdiff-with-model
   callbacks:
   - class_path: WandbModelCheckpoint
     init_args:
@@ -23,7 +23,7 @@ data:
   class_path: datamodule.DummyDataModule
   init_args: {}
 model:
-  class_path: models.finetune_targetdiff_with_model.FinetuneTargetdiffWithModel
+  class_path: models.guide_targetdiff_with_model.GuideTargetdiffWithModel
   init_args:
     guidance_model: "best"
     alpha: 0.1 # guidance step
@@ -33,7 +33,7 @@ model:
     reg_mode: "projection"
     reg: 1e-3
     data_id: 0
-    scheduler: "finetune-eular"
+    scheduler: "guide-eular"
     # vina_web_url: https://foydiwfg7gjyejxzapwso5czuu0jzxwt.lambda-url.us-east-2.on.aws
     vina_web_url: https://qylhug6f6qwh7xbs5zsewfzwi40hktit.lambda-url.ap-southeast-1.on.aws
     

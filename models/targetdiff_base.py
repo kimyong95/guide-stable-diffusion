@@ -50,7 +50,7 @@ class TargetdiffBase(LightningBase):
         
         if scheduler == "ddim":
             self.num_sampling_steps = 200
-        elif scheduler == "finetune-eular":
+        elif scheduler == "guide-eular":
             self.num_sampling_steps = 20
         else:
             raise NotImplementedError()

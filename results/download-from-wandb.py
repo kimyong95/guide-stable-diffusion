@@ -13,20 +13,20 @@ def run_name(algo,name):
     if algo == "ours":
         # simple reward
         if name in ["compress", "incompress", "aesthetic"]:
-            return f"finetune-with-gp-{name}-edm"
+            return f"guide-with-gp-{name}-edm"
         # ablation study
         elif name.startswith("ablation"):
-            return f"finetune-with-gp-prompt=deerelephant-{name}"
+            return f"guide-with-gp-prompt=deerelephant-{name}"
         # prompts
         else:
-            return f"finetune-with-gp-prompt={name}"
+            return f"guide-with-gp-prompt={name}"
     if algo == "ours-ddim":
         # simple reward
         if name in ["compress", "incompress", "aesthetic"]:
-            return f"finetune-with-gp-{name}-ddim"
+            return f"guide-with-gp-{name}-ddim"
         # prompts
         else:
-            return f"finetune-with-gp-prompt={name}-ddim"
+            return f"guide-with-gp-prompt={name}-ddim"
     else:
         return f"{algo}-{name}"
 

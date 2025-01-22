@@ -9,7 +9,7 @@ trainer:
     class_path: WandbLogger
     init_args:
       project: guide-stable-diffusion
-      name: finetune-with-model
+      name: guide-with-model
   callbacks:
   - class_path: ModelCheckpoint
     init_args:
@@ -21,7 +21,7 @@ data:
   class_path: datamodule.DummyDataModule
   init_args: {}
 model:
-  class_path: models.finetune_with_model.FinetuneDiffusionWithModel
+  class_path: models.guide_with_model.GuideDiffusionWithModel
   init_args:
     compile: True
     guidance_model: "gp"

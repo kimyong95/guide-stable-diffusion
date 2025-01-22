@@ -23,7 +23,7 @@ from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
 
 
-class FinetuneFlowMatchEulerDiscreteScheduler(FlowMatchEulerDiscreteScheduler):
+class GuideFlowMatchEulerDiscreteScheduler(FlowMatchEulerDiscreteScheduler):
 
 
     ######################### copy from parent #########################
@@ -100,7 +100,7 @@ class FinetuneFlowMatchEulerDiscreteScheduler(FlowMatchEulerDiscreteScheduler):
         return FlowMatchEulerDiscreteSchedulerOutput(prev_sample=prev_sample)
     ######################### copy from parent #########################
 
-class FinetuneStableDiffusion3Pipeline(StableDiffusion3Pipeline):
+class GuideStableDiffusion3Pipeline(StableDiffusion3Pipeline):
 
     ######################### copy from parent #########################
     @torch.no_grad()
@@ -390,7 +390,7 @@ class FinetuneStableDiffusion3Pipeline(StableDiffusion3Pipeline):
         return StableDiffusion3PipelineOutput(images=image)
     ######################### copy from parent #########################
 
-class FinetuneStableDiffusionPipeline(StableDiffusionPipeline):
+class GuideStableDiffusionPipeline(StableDiffusionPipeline):
 
     ######################### copy from parent #########################
     def __call__(
@@ -723,7 +723,7 @@ class FinetuneStableDiffusionPipeline(StableDiffusionPipeline):
 
     ######################### copy from parent #########################
 
-class FinetuneEulerDiscreteScheduler(EulerDiscreteScheduler):
+class GuideEulerDiscreteScheduler(EulerDiscreteScheduler):
     
     ######################### copy from parent #########################
     def step(
@@ -843,7 +843,7 @@ class FinetuneEulerDiscreteScheduler(EulerDiscreteScheduler):
     ######################### copy from parent #########################
 
 
-class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
+class GuideStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
     @torch.no_grad()
     @replace_example_docstring(EXAMPLE_DOC_STRING)
@@ -1277,7 +1277,7 @@ class FinetuneStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
                 # ↓↓↓↓↓↓↓↓↓↓ edited ↓↓↓↓↓↓↓↓↓↓ #
-                if isinstance(self.scheduler, FinetuneEulerDiscreteScheduler):
+                if isinstance(self.scheduler, GuideEulerDiscreteScheduler):
                     step_output = self.scheduler.step(noise_pred, t, latents, given_noise=_given_noise, s_churn=s_churn, **extra_step_kwargs, return_dict=True)
                     latents = step_output.prev_sample
                     pred_original_sample = step_output.pred_original_sample

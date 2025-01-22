@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Finetune with Model",
+            "name": "Guide with Optimization",
             "type": "debugpy",
             "request": "launch",
             "program": "main.py",
@@ -18,25 +18,50 @@
             "cwd": "${workspaceFolder}",
             "args": [
                 "fit",
-                "--config", "configs/finetune_with_model.yaml",
-                "--config", "configs/debug.yaml",
+                "--config", "configs/guide_with_optimization.yaml",
+                "--model.init_args.training_batch_size=5",
+                "--model.init_args.validation_batch_size=2",
+                "--trainer.logger.init_args.mode=offline",
+                "--model.init_args.compile=False",
             ]
         },
         {
-            "name": "Finetune Targetdiff with Model",
+            "name": "Guide with Model",
             "type": "debugpy",
             "request": "launch",
             "program": "main.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "env": {
-                "CUDA_VISIBLE_DEVICES": "0",
+                "CUDA_VISIBLE_DEVICES": "1",
+                "PYTHONPATH": "${workspaceFolder}",
+            },
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "fit",
+                "--config", "configs/guide_with_model.yaml",
+                "--config", "configs/guide_with_model_aniprompts.yaml",
+                "--model.init_args.reward_func=compressibility",
+                "--trainer.logger.init_args.mode=offline",
+                "--model.init_args.compile=False",
+                "--ckpt=wandb/run-20241115_190409-bqxtodyu/checkpoints/epoch=049.ckpt"
+            ]
+        },
+        {
+            "name": "Guide Targetdiff with Model",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "1",
                 "PYTHONPATH": "${workspaceFolder}:related_works/targetdiff",
             },
             "cwd": "${workspaceFolder}",
             "args": [
                 "fit",
-                "--config", "configs/finetune_targetdiff_with_model.yaml",
+                "--config", "configs/guide_targetdiff_with_model.yaml",
                 "--config", "configs/debug.yaml",
                 "--model.init_args.validation_batch_size=8",
                 "--model.init_args.data_id=0",
@@ -92,6 +117,7 @@
             "cwd": "${workspaceFolder}/related_works/d3po",
             "args": [
                 "--config.wandb_mode=disabled",
+                "--config.sample.batch_size=3", "--config.train.batch_size=3", "--config.sample.eval_batch_size=3",
             ]
         },
         {
@@ -112,7 +138,27 @@
                 // "--config.wandb_mode=disabled",
                 "--config.data_id=0",
                 "--config.train.learning_rate=1e-3",
-                
+            ]
+        },
+        {
+            "name": "Direct Noise Optimization",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "dno_sdxl.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "1",
+                "PYTHONPATH": ".:${workspaceFolder}",
+            },
+            "cwd": "${workspaceFolder}/related_works/Direct-Noise-Optimization",
+            "args": [
+                "--name", "debug",
+                "--prompt", "A yellow reindeer and a blue elephant.",
+                "--objective", "compressibility",
+                "--sd_model", "sdxl-lightning",
+                "--grad_estimate_total_num", "4",
+                "--grad_estimate_batchsize", "4",
             ]
         },
         {
@@ -123,8 +169,8 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "env": {
-                "CUDA_VISIBLE_DEVICES": "0",
-                "PYTHONPATH": "${workspaceFolder}:related_works/targetdiff",
+                "CUDA_VISIBLE_DEVICES": "1",
+                "PYTHONPATH": ".:${workspaceFolder}",
             },
             "cwd": "${workspaceFolder}",
         }
