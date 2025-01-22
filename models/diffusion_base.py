@@ -34,7 +34,7 @@ REWAED_FUNC = {
 
 class DiffusionBase(LightningBase):
 
-    def __init__(self, sd_model, generate_prompt, reward_func, reward_query_prompt=None, reward_target_prompt=None, max_reward_value=None, compile=False):
+    def __init__(self, sd_model, generate_prompt, reward_func, reward_query_prompt=None, reward_target_prompts=None, max_reward_value=None, compile=False):
 
         super().__init__()
         self.sd_model = sd_model
@@ -119,43 +119,7 @@ class DiffusionBase(LightningBase):
         self.reward_query_prompt = reward_query_prompt
         self.max_reward_value = max_reward_value
 
-        if type(reward_target_prompt) == str:
-            self.reward_target_prompt = { self.num_sampling_steps: reward_target_prompt }
-        elif type(reward_target_prompt) == dict:
-            types = [type(k) for k in reward_target_prompt.keys()]
-            if all([t == int for t in types]):
-                assert self.num_sampling_steps in reward_target_prompt, f"last step must be included in reward_target_prompt keys"
-                self.reward_target_prompt = reward_target_prompt
-            elif all([t == float for t in types]):
-                self.reward_target_prompt = { int(k * (self.num_sampling_steps)): v for k, v in reward_target_prompt.items()}
-            else:
-                raise ValueError(f"Invalid type for reward_target_prompt keys: {types}")
-        elif type(reward_target_prompt) == list:
-            self.pipe.scheduler.set_timesteps(self.num_sampling_steps)
-            if isinstance(self.pipe.scheduler, EulerDiscreteScheduler):
-                init_sigma = self.pipe.scheduler.init_noise_sigma.unsqueeze(dim=0)
-                sigmas = self.pipe.scheduler.sigmas[:-1]
-            elif isinstance(self.pipe.scheduler, DDIMScheduler):
-                init_variance = torch.tensor([self.pipe.scheduler.init_noise_sigma]) ** 2
-                variances = []
-                for t in self.pipe.scheduler.timesteps:
-                    prev_t = t - self.pipe.scheduler.config.num_train_timesteps // self.pipe.scheduler.num_inference_steps
-                    variance = self.pipe.scheduler._get_variance(t, prev_t)
-                    eta = 1.0
-                    variance_t = eta * variance
-                    variances.append(variance_t)
-                variances = torch.stack(variances)
-            var_cum = torch.cat([init_variance, variances], dim=0).cumsum(dim=0)
-            var_cum = var_cum / var_cum[-1]
-
-            reward_k = []
-            delta = 1 / len(reward_target_prompt)
-            for i in range(1, len(reward_target_prompt)):
-                k = (var_cum < i * delta).nonzero()[-1].item()
-                reward_k.append(k)
-            reward_k.append(self.num_sampling_steps)
-            self.reward_target_prompt = { k: v for k, v in zip(reward_k, reward_target_prompt) }
-
+        self.reward_target_prompts = reward_target_prompts
 
         assert reward_func in REWAED_FUNC
         self.reward_func = REWAED_FUNC[reward_func]()
@@ -237,16 +201,10 @@ class DiffusionBase(LightningBase):
     # maximize reward
     # minimize scores
     # input: PIL images
-    def get_scores(self, images, index=None):
-
-        if index is None:
-            index = self.num_sampling_steps
+    def get_scores(self, images, index=-1):
         
         if type(self.reward_func) == GeminiQuestion:
-            reward_steps = list(self.reward_target_prompt.keys())
-            if index not in reward_steps:
-                index = reward_steps[bisect.bisect_right(reward_steps,index)]
-            reward_target_prompt = self.reward_target_prompt[index]
+            reward_target_prompt = self.reward_target_prompts[index]
             rewards, outputs = self.reward_func(images, reward_target_prompt, self.reward_query_prompt, max_reward=self.max_reward_value)
         elif type(self.reward_func) in [Compressibility, InCompressibility, Aesthetic]:
             rewards, outputs = self.reward_func(images)

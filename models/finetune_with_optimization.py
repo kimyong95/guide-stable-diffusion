@@ -25,8 +25,8 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class FinetuneDiffusionWithOptimization(DiffusionBase):
 
-    def __init__(self, lr, projection, training_batch_size, validation_batch_size, compile, evaluate_intermidiate_steps, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value):
-        super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompt, max_reward_value, compile)
+    def __init__(self, lr, projection, training_batch_size, validation_batch_size, compile, evaluate_intermidiate_steps, sd_model, generate_prompt, reward_query_prompt, reward_target_prompts, reward_func, max_reward_value):
+        super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompts, max_reward_value, compile)
 
         self.lr = lr
         self.projection = projection
@@ -38,6 +38,27 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
         self.register_buffer('mu', mu)
         sigma = torch.ones(self.num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
         self.register_buffer('sigma', sigma) # entries is variance
+
+        ###################### timestep-objective mapping ######################
+        self.pipe.scheduler.set_timesteps(self.num_sampling_steps)
+        init_variance = torch.tensor([self.pipe.scheduler.init_noise_sigma]) ** 2
+        variances = []
+        for t in self.pipe.scheduler.timesteps:
+            prev_t = t - self.pipe.scheduler.config.num_train_timesteps // self.pipe.scheduler.num_inference_steps
+            variance = self.pipe.scheduler._get_variance(t, prev_t)
+            eta = 1.0
+            variance_t = eta * variance
+            variances.append(variance_t)
+        variances = torch.stack(variances)
+
+        var_cum = torch.cat([init_variance, variances], dim=0).cumsum(dim=0)
+        var_cum = var_cum / var_cum[-1]
+
+        delta = 1 / len(reward_target_prompts)
+        self.timestep_objective_map = (var_cum // delta).int().tolist()
+        self.timestep_objective_map[-1] = len(reward_target_prompts) - 1
+        ###################### timestep-objective mapping ######################
+
 
         # dummy parameters for pytorch lightning optimizer to work
         self.dummy = torch.nn.Parameter(torch.zeros(1))
@@ -141,37 +162,26 @@ class FinetuneDiffusionWithOptimization(DiffusionBase):
             callback_on_step_end=callback_func,
         ).images
 
-        evaluated_steps = list(self.reward_target_prompt.keys())
-        scores = torch.zeros((self.num_sampling_steps+1, batch_size), device=self.device)
-
+        scores = torch.zeros((len(self.reward_target_prompts), batch_size), device=self.device)
+        
         texts_list = []
         images_list = []
-
-        for i, (step, _) in enumerate(self.reward_target_prompt.items()):
-            score, text = self.get_scores(images_final, step)
-            scores[step] = score
+        for i in range(len(self.reward_target_prompts)):
+            score, text = self.get_scores(images_final, i)
+            scores[i] = score
             texts_list.append(text)
             images_list.append(images_final)
 
-            self.log(f"score_x3_f{i}_mean", score.mean())
+            self.log(f"score_f{i}_mean", score.mean())
         
         self.log_images(images_final, stage="train")
         self.log_score(scores[-1], stage="train")
+        self.log_ablation(images_list=images_list, texts_list=texts_list, scores_list=scores, stage="train")
 
-        # fill scores by future timestep
-        for i in range(self.num_sampling_steps):
-            if i not in evaluated_steps:
-                next_i = evaluated_steps[bisect.bisect_right(evaluated_steps,i)]
-                scores[i] = scores[next_i]
-
-        # fill scores by mean
-        # scores_mean = scores[evaluated_steps].mean(0)
-        # scores[:] = scores_mean[None,:]
-
+        propagated_scores = torch.zeros((self.num_sampling_steps+1, batch_size), device=self.device)
+        propagated_scores = scores[self.timestep_objective_map]
+        self.update_parameters(self._x_flatten(epsilon), propagated_scores)
         self.log_params(self.mu, self.sigma)
-        self.log_ablation(images_list=images_list, texts_list=texts_list, scores_list=scores[evaluated_steps], stage="train")
-
-        self.update_parameters(self._x_flatten(epsilon), scores)
         
         # dummy
         self.optimizers().step()
