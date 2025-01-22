@@ -8,7 +8,7 @@ trainer:
   logger:
     class_path: WandbLogger
     init_args:
-      project: finetune-stable-diffusion
+      project: guide-stable-diffusion
       name: finetune-with-optimization
   callbacks:
   - class_path: ModelCheckpoint

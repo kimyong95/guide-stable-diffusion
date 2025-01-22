@@ -111,7 +111,7 @@ def random_image():
     return Image.fromarray(np.random.randint(0, 256, (1024, 1024, 3), dtype=np.uint8))
 
 api = wandb.Api()
-wandb_path = "kimyong95/finetune-stable-diffusion"
+wandb_path = "kimyong95/guide-stable-diffusion"
 
 missing = []
 

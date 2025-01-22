@@ -4,7 +4,7 @@ import os
 
 api = wandb.Api()
 
-wandb_path = "kimyong95/finetune-stable-diffusion"
+wandb_path = "kimyong95/guide-stable-diffusion"
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
 

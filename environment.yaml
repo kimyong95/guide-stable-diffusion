@@ -1,4 +1,4 @@
-name: finetune-stable-diffusion
+name: guide-stable-diffusion
 channels:
   - nvidia
   - pytorch
