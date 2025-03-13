@@ -24,12 +24,13 @@ dependencies:
   - accelerate=1.0.1
   - scipy=1.12
   - python-dotenv=1.0.1
-  - transformers=4.43.2
+  - transformers=4.49
   - open-clip-torch=2.24.0
   - cma=3.3
   - scikit-learn=1.4.2
   - gpytorch::gpytorch=1.11
   - ipywidgets=8.1
+  - seaborn=0.13
 
   ######## for video #########
   # - imageio-ffmpeg

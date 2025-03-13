@@ -1,0 +1,9 @@
+
+model:
+  init_args:
+    generate_prompt: "A carton image showing Isaac Newton resting on the ground under a durian tree, with a dreaming bubble above his head, display the text of 'F=ma' formula inside the dream bubble."
+    reward_target_prompts:
+    - "A carton image showing Isaac Newton resting under a durian tree."
+    - "A carton image showing Isaac Newton resting on the ground under a durian tree."
+    - "A carton image showing Isaac Newton resting on the ground under a durian tree, with a dreaming bubble above his head."
+    - "A carton image showing Isaac Newton resting on the ground under a durian tree, with a dreaming bubble above his head, display the text of 'F=ma' formula inside the dream bubble."

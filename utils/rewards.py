@@ -117,7 +117,7 @@ class GeminiQuestion(RewardBase):
     @staticmethod
     @retry(times=10, failed_return=None, exceptions=(ServerError, TooManyRequests, ValueError))
     async def generate_content_async(contents_list):
-        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash-lite-001")
         safety_settings = {
             HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -171,3 +171,69 @@ class GeminiQuestion(RewardBase):
         scores = torch.as_tensor(scores, device=self.device) / max_reward
 
         return scores, responses
+
+from transformers import MllamaForConditionalGeneration, AutoProcessor
+class LlamaQuestion(RewardBase):
+    def __init__(self):
+
+        model_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
+        self.model = MllamaForConditionalGeneration.from_pretrained(
+            model_id,
+            torch_dtype=torch.bfloat16,
+        )
+        self.processor = AutoProcessor.from_pretrained(model_id)
+    
+    def to(self,device):
+        super().to(device)
+        self.model = self.model.to(device)
+        return self
+
+    # higher is better
+    def __call__(self, images: List[Image.Image], target_prompt, query_prompt, max_reward=5.0):
+
+        if not query_prompt:
+            question_query = inspect.cleandoc(f"""
+                Does the prompt '{target_prompt}' accurately describe the image? Rate from 1 (inaccurate) to 5 (accurate).
+                Answer in the format: Score=score, Reason=reason.
+            """)
+        else:
+            question_query = query_prompt.format(target_prompt=target_prompt)
+
+        messages = [
+            {"role": "user", "content": [
+                {"type": "image"},
+                {"type": "text", "text": question_query}
+            ]}
+        ]
+        input_text = self.processor.apply_chat_template(messages, add_generation_prompt=True)
+
+        scores = []
+        output_texts = []
+
+        for image in images:
+            input_tokens = self.processor(
+                image,
+                input_text,
+                add_special_tokens=False,
+                return_tensors="pt"
+            ).to(self.model.device)
+            input_len = input_tokens.input_ids.shape[1]
+
+            RETRY_TIMES = 10
+            for i in range(RETRY_TIMES):
+                output_tokens = self.model.generate(**input_tokens, max_new_tokens=200)
+                output_text = self.processor.decode(output_tokens[0][input_len:])
+                
+                match = re.search(r"Score=(\d+)", output_text)
+                if match is None:
+                    print(f"Invalid output text: {output_text}, retry {i+1}/{RETRY_TIMES}")
+                else:
+                    break
+
+            score = int(match.group(1))
+            scores.append(score)
+            output_texts.append(output_text)
+        
+        scores = torch.as_tensor(scores, device=self.device) / max_reward
+
+        return scores, output_texts

@@ -22,11 +22,12 @@ from safetensors.torch import load_file
 from utils.guide_difussers import GuideStableDiffusionPipeline, GuideStableDiffusion3Pipeline, GuideFlowMatchEulerDiscreteScheduler
 from utils.guide_difussers import GuideEulerDiscreteScheduler, GuideStableDiffusionXLPipeline
 from diffusers import EulerDiscreteScheduler, DDIMScheduler
-from utils.rewards import GeminiQuestion, Compressibility, InCompressibility, Aesthetic
+from utils.rewards import GeminiQuestion, LlamaQuestion, Compressibility, InCompressibility, Aesthetic
 from utils.utils import find_closest_factors, disable_train
 
 REWAED_FUNC = {
     "gemini-question": GeminiQuestion,
+    "llama-question": LlamaQuestion,
     "compressibility": Compressibility,
     "incompresibility": InCompressibility,
     "aesthetic": Aesthetic,
@@ -203,7 +204,7 @@ class DiffusionBase(LightningBase):
     # input: PIL images
     def get_scores(self, images, index=-1):
         
-        if type(self.reward_func) == GeminiQuestion:
+        if type(self.reward_func) in [GeminiQuestion, LlamaQuestion]:
             reward_target_prompt = self.reward_target_prompts[index]
             rewards, outputs = self.reward_func(images, reward_target_prompt, self.reward_query_prompt, max_reward=self.max_reward_value)
         elif type(self.reward_func) in [Compressibility, InCompressibility, Aesthetic]:
