@@ -20,10 +20,10 @@ def retry(times, failed_return, exceptions, backoff_factor=1):
             attempt = 0
             while attempt < times:
                 try:
-                    return await func(*args, **kwargs)
+                    return await func(*args, **kwargs, retry_attempt=attempt)
                 except exceptions as e:
                     print(
-                        f"Exception {type(e)} thrown when attempting to run {func}, attempt {attempt} of {times}"
+                        f"Exception [{type(e)}:{e}] thrown when attempting to run {func}, attempt {attempt} of {times}"
                     )
                     await asyncio.sleep(backoff_factor * 2**attempt)
                     attempt += 1

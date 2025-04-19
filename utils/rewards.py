@@ -116,20 +116,32 @@ class GeminiQuestion(RewardBase):
 
     @staticmethod
     @retry(times=10, failed_return=None, exceptions=(ServerError, TooManyRequests, ValueError))
-    async def generate_content_async(contents_list):
-        model = genai.GenerativeModel(model_name="gemini-2.0-flash-lite-001")
+    async def get_one_score_async(model, contents, retry_attempt):
         safety_settings = {
             HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
+        temperature = 0 if retry_attempt == 0 else 0.1
+        generation_config = genai.types.GenerationConfig(temperature=temperature, max_output_tokens=500)
 
-        generation_config = genai.types.GenerationConfig(temperature=0.0, max_output_tokens=100)
-        tasks = [model.generate_content_async(contents, safety_settings=safety_settings, generation_config=generation_config, request_options={"timeout": 300}) for contents in contents_list]
-        responses = await asyncio.gather(*tasks)
-        texts = [r.text.strip() for r in responses]
-        return texts
+        response = await model.generate_content_async(contents, safety_settings=safety_settings, generation_config=generation_config, request_options={"timeout": 300})
+        text = response.text.strip()
+        match = re.search(r"Score=(\d+)", text)
+        if match is None:
+            raise ValueError(f"Invalid response: {text}")
+        score = int(match.group(1))
+
+        return (text, score)
+
+    @staticmethod
+    async def get_scores_async(contents_list):
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash-lite-001")
+        
+        tasks = [GeminiQuestion.get_one_score_async(model, contents) for contents in contents_list]
+        outputs = await asyncio.gather(*tasks)
+        return outputs
 
     # higher is better
     def __call__(self, images: List[Image.Image], target_prompt, query_prompt, max_reward=5.0):
@@ -156,26 +168,22 @@ class GeminiQuestion(RewardBase):
                 contents.append(image + [question_query])
             else:
                 raise ValueError(f"Invalid image type: {type(image)}")
-        responses = loop.run_until_complete(self.generate_content_async(contents))
-        # Eg responses = ["Score=5, Reason=xxx.", ...]
+        outputs = loop.run_until_complete(self.get_scores_async(contents))
+        # Eg outputs = [("Score=5, Reason=xxx.", "5"), ...]
 
-        if responses is None:
-            responses = [""] * len(images)
-
+        texts = []
         scores = []
-        for response in responses:
-            match = re.search(r"Score=(\d+)", response)
-            assert match is not None, f"Invalid response: {response}"
-            score = int(match.group(1))
+        for text, score in outputs:
+            texts.append(text)
             scores.append(score)
         scores = torch.as_tensor(scores, device=self.device) / max_reward
 
-        return scores, responses
+        return scores, texts
 
-from transformers import MllamaForConditionalGeneration, AutoProcessor
 class LlamaQuestion(RewardBase):
+    
     def __init__(self):
-
+        from transformers import MllamaForConditionalGeneration, AutoProcessor
         model_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
         self.model = MllamaForConditionalGeneration.from_pretrained(
             model_id,
@@ -224,6 +232,74 @@ class LlamaQuestion(RewardBase):
                 output_tokens = self.model.generate(**input_tokens, max_new_tokens=200)
                 output_text = self.processor.decode(output_tokens[0][input_len:])
                 
+                match = re.search(r"Score=(\d+)", output_text)
+                if match is None:
+                    print(f"Invalid output text: {output_text}, retry {i+1}/{RETRY_TIMES}")
+                else:
+                    break
+
+            score = int(match.group(1))
+            scores.append(score)
+            output_texts.append(output_text)
+        
+        scores = torch.as_tensor(scores, device=self.device) / max_reward
+
+        return scores, output_texts
+
+
+class GemmaQuestion(RewardBase):
+    def __init__(self):
+        from transformers import AutoProcessor, Gemma3ForConditionalGeneration
+        model_id = "google/gemma-3-12b-it"
+        self.model = Gemma3ForConditionalGeneration.from_pretrained(model_id).eval()
+        self.processor = AutoProcessor.from_pretrained(model_id)
+    
+    def to(self,device):
+        super().to(device)
+        self.model = self.model.to(device)
+        return self
+
+    # higher is better
+    def __call__(self, images: List[Image.Image], target_prompt, query_prompt, max_reward=5.0):
+
+        if not query_prompt:
+            question_query = inspect.cleandoc(f"""
+                Does the prompt '{target_prompt}' accurately describe the image? Rate from 1 (inaccurate) to 5 (accurate).
+                Answer in the format: Score=score, Reason=reason.
+            """)
+        else:
+            question_query = query_prompt.format(target_prompt=target_prompt)
+
+        scores = []
+        output_texts = []
+
+        for image in images:
+
+            messages = [
+                {
+                    "role": "system",
+                    "content": [{"type": "text", "text": "You are a helpful assistant."}]
+                },
+                {"role": "user", "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": question_query}
+                ]}
+            ]
+
+            inputs = self.processor.apply_chat_template(
+                messages, add_generation_prompt=True,
+                tokenize=True, return_dict=True, return_tensors="pt"
+            ).to(self.device, dtype=torch.bfloat16)
+            input_len = inputs["input_ids"].shape[-1]
+            
+            RETRY_TIMES = 10
+            
+            for i in range(RETRY_TIMES):
+                do_sample = ( i != 0 )
+                with torch.inference_mode():
+                    generation = self.model.generate(**inputs, max_new_tokens=1000, do_sample=do_sample)
+                    generation = generation[0][input_len:]
+                output_text = self.processor.decode(generation, skip_special_tokens=True).replace("\n", "")
                 match = re.search(r"Score=(\d+)", output_text)
                 if match is None:
                     print(f"Invalid output text: {output_text}, retry {i+1}/{RETRY_TIMES}")

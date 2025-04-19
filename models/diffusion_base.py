@@ -22,12 +22,13 @@ from safetensors.torch import load_file
 from utils.guide_difussers import GuideStableDiffusionPipeline, GuideStableDiffusion3Pipeline, GuideFlowMatchEulerDiscreteScheduler
 from utils.guide_difussers import GuideEulerDiscreteScheduler, GuideStableDiffusionXLPipeline
 from diffusers import EulerDiscreteScheduler, DDIMScheduler
-from utils.rewards import GeminiQuestion, LlamaQuestion, Compressibility, InCompressibility, Aesthetic
+from utils.rewards import GeminiQuestion, GemmaQuestion, LlamaQuestion, Compressibility, InCompressibility, Aesthetic
 from utils.utils import find_closest_factors, disable_train
 
 REWAED_FUNC = {
     "gemini-question": GeminiQuestion,
     "llama-question": LlamaQuestion,
+    "gemma-question": GemmaQuestion,
     "compressibility": Compressibility,
     "incompresibility": InCompressibility,
     "aesthetic": Aesthetic,

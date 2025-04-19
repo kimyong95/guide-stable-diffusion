@@ -3,7 +3,6 @@ from typing import Any, Callable, Dict, Optional, Type, Union
 from lightning.pytorch import LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.cli import ArgsType, LightningCLI, SaveConfigCallback
 from lightning.pytorch.callbacks import ModelCheckpoint
-from jsonargparse import lazy_instance
 from lightning.pytorch.loggers import WandbLogger
 import lightning
 import os
