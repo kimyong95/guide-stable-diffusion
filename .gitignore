@@ -12,3 +12,5 @@ tmp/**/*
 oneflow*
 results/**/*
 results-molecules/**/*
+demo/**/*
+!demo/*.py
