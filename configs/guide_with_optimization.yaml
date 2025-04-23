@@ -25,7 +25,7 @@ model:
   init_args:
     compile: True
     sd_model: sdxl-ddim
-    lr: 500
+    lr: 200
     projection: True
     training_batch_size: 16
     validation_batch_size: 16

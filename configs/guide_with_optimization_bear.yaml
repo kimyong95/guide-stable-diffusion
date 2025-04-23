@@ -1,9 +1,9 @@
 
 model:
   init_args:
-    generate_prompt: "A small bear wearing a VR headset sits on a log in the forest, hugging a large translucent crystal apple, a butterfly resting on the apple."
+    generate_prompt: "A small bear wearing a VR headset sits on a log in the forest, hugging a large translucent crystal apple, a butterfly resting on its nose."
     reward_target_prompts:
     - "A small bear wearing a VR headset sits on a log in the forest."
     - "A small bear wearing a VR headset sits on a log in the forest, hugging a large apple."
     - "A small bear wearing a VR headset sits on a log in the forest, hugging a large translucent crystal apple."
-    - "A small bear wearing a VR headset sits on a log in the forest, hugging a large translucent crystal apple, a butterfly resting on the apple."
+    - "A small bear wearing a VR headset sits on a log in the forest, hugging a large translucent crystal apple, a butterfly resting on its nose."
