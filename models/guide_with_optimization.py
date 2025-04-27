@@ -25,10 +25,11 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class GuideDiffusionWithOptimization(DiffusionBase):
 
-    def __init__(self, lr, projection, training_batch_size, validation_batch_size, compile, evaluate_intermidiate_steps, sd_model, generate_prompt, reward_query_prompt, reward_target_prompts, reward_func, max_reward_value):
+    def __init__(self, lr_mu, lr_sigma, projection, training_batch_size, validation_batch_size, compile, evaluate_intermidiate_steps, sd_model, generate_prompt, reward_query_prompt, reward_target_prompts, reward_func, max_reward_value):
         super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompts, max_reward_value, compile)
 
-        self.lr = lr
+        self.lr_mu = lr_mu
+        self.lr_sigma = lr_sigma
         self.projection = projection
         self.training_batch_size = training_batch_size
         self.validation_batch_size = validation_batch_size
@@ -106,31 +107,26 @@ class GuideDiffusionWithOptimization(DiffusionBase):
         for t in range(T_dim):
             
             scores_t = scores[t:].mean(0)
-            # min max normalize score to [0,1]
-            min_score = scores_t.min()
-            max_score = scores_t.max()
-            if min_score != max_score:
-                h = (scores_t - min_score) / (max_score - min_score)
-            else:
-                h = (scores_t - min_score)
+            scores_t_normalized = (scores_t - scores_t.mean()) / (scores_t.std() + 1e-8)
 
-            _beta = self.lr
+            w = torch.exp( - scores_t_normalized) / torch.exp( - scores_t_normalized).sum()
+
             self.sigma[t] = 1 / (
                 
-                1/self.sigma[t] + _beta / D_dim * (
+                1/self.sigma[t] + self.lr_sigma / math.sqrt(D_dim) * (
                     (1/self.sigma[t])[None,:] * (z[t] - self.mu[t,None,:]) * (z[t] - self.mu[t,None,:]) * (1/self.sigma[t])[None,:] * \
                     
-                    h[:,None]
+                    w[:,None]
 
                 # mean over N
                 ).mean(0)
             )
             
-            self.mu[t] = self.mu[t] - _beta / math.sqrt(D_dim) * (
+            self.mu[t] = self.mu[t] - self.lr_mu / math.sqrt(D_dim) * (
 
                 (z[t] - self.mu[t][None,:]) * \
                 
-                h[:,None]
+                scores_t_normalized[:,None]
             
             # mean over N
             ).mean(0)
