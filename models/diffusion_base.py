@@ -36,7 +36,7 @@ REWAED_FUNC = {
 
 class DiffusionBase(LightningBase):
 
-    def __init__(self, sd_model, generate_prompt, reward_func, reward_query_prompt=None, reward_target_prompts=None, max_reward_value=None, compile=False):
+    def __init__(self, sd_model, generate_prompt, reward_func, reward_query_prompt=None, reward_target_prompt=None, max_reward_value=None, compile=False):
 
         super().__init__()
         self.sd_model = sd_model
@@ -121,7 +121,7 @@ class DiffusionBase(LightningBase):
         self.reward_query_prompt = reward_query_prompt
         self.max_reward_value = max_reward_value
 
-        self.reward_target_prompts = reward_target_prompts
+        self.reward_target_prompt = reward_target_prompt
 
         assert reward_func in REWAED_FUNC
         self.reward_func = REWAED_FUNC[reward_func]()
@@ -203,11 +203,10 @@ class DiffusionBase(LightningBase):
     # maximize reward
     # minimize scores
     # input: PIL images
-    def get_scores(self, images, index=-1):
+    def get_scores(self, images):
         
         if type(self.reward_func) in [GeminiQuestion, LlamaQuestion]:
-            reward_target_prompt = self.reward_target_prompts[index]
-            rewards, outputs = self.reward_func(images, reward_target_prompt, self.reward_query_prompt, max_reward=self.max_reward_value)
+            rewards, outputs = self.reward_func(images, self.reward_target_prompt, self.reward_query_prompt, max_reward=self.max_reward_value)
         elif type(self.reward_func) in [Compressibility, InCompressibility, Aesthetic]:
             rewards, outputs = self.reward_func(images)
 

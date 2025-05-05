@@ -28,15 +28,11 @@ model:
     lr_mu: 300
     lr_sigma: 30
     projection: True
-    training_batch_size: 16
+    training_batch_size: 32
     validation_batch_size: 16
     generate_prompt: "A robotic cat and a robotic dog playing with a football on the moon. The cat wearing a hat, and dog wearing a scarf."
-    reward_target_prompts:
-    - "They playing with football on the moon."
-    - "A robotic cat and a robotic dog playing with a football on the moon."
-    - "A robotic cat and a robotic dog playing with a football on the moon. The dog wearing a scarf."
-    - "A robotic cat and a robotic dog playing with a football on the moon. The cat wearing a hat, and dog wearing a scarf."
+    reward_target_prompt: "A robotic cat and a robotic dog playing with a football on the moon. The cat wearing a hat, and dog wearing a scarf."
     reward_func: "gemini-question"
     reward_query_prompt: "Does the image accurately aligned with the prompt '{target_prompt}', why? Answer score=0 (no) or score=1 (yes).\nAnswer in the format: Reason=reason, Score=score."
     max_reward_value: 1.0
-    evaluate_intermidiate_steps: False
+    number_objectives: 2
