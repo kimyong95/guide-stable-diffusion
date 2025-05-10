@@ -17,6 +17,7 @@ import bisect
 from utils.utils import FunctionCallTracker, disable_train
 from diffusers import UNet2DModel
 import gpytorch
+import random
 from models.diffusion_base import find_closest_factors
 from palettable.colorbrewer.qualitative import Dark2_4
 colors = Dark2_4.mpl_colors
@@ -25,15 +26,17 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class GuideDiffusionWithOptimization(DiffusionBase):
 
-    def __init__(self, lr_mu, lr_sigma, projection, training_batch_size, validation_batch_size, compile, number_objectives, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value):
+    def __init__(self, lr_mu, lr_sigma, projection, training_batch_size, validation_batch_size, compile, number_objectives, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, dev_modes, validation_generate_prompt):
         super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompt, max_reward_value, compile)
 
         self.lr_mu = lr_mu
         self.lr_sigma = lr_sigma
         self.projection = projection
-        self.training_batch_size = training_batch_size
+        self.training_batch_size = [int(b) for b in str(training_batch_size).split(";")]
         self.validation_batch_size = validation_batch_size
         self.number_objectives = number_objectives
+        self.dev_modes = dev_modes.split(";")
+        self.validation_generate_prompt = validation_generate_prompt
 
         mu = torch.zeros(self.num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
         self.register_buffer('mu', mu)
@@ -112,7 +115,10 @@ class GuideDiffusionWithOptimization(DiffusionBase):
 
         for t in range(T_dim):
             
-            scores_t = scores[t:].mean(0)
+            scores_t = scores[t:].nanmean(0)
+            valid_mask = ~torch.isnan(scores_t)
+            scores_t = scores_t[valid_mask]
+            z_t = z[t][valid_mask]
             scores_t_normalized = (scores_t - scores_t.mean()) / (scores_t.std() + 1e-8)
 
             w = torch.exp( - scores_t_normalized) / torch.exp( - scores_t_normalized).sum()
@@ -120,7 +126,7 @@ class GuideDiffusionWithOptimization(DiffusionBase):
             self.sigma[t] = 1 / (
                 
                 1/self.sigma[t] + self.lr_sigma / math.sqrt(D_dim) * (
-                    (1/self.sigma[t])[None,:] * (z[t] - self.mu[t,None,:]) * (z[t] - self.mu[t,None,:]) * (1/self.sigma[t])[None,:] * \
+                    (1/self.sigma[t])[None,:] * (z_t - self.mu[t,None,:]) * (z_t - self.mu[t,None,:]) * (1/self.sigma[t])[None,:] * \
                     
                     w[:,None]
 
@@ -130,19 +136,54 @@ class GuideDiffusionWithOptimization(DiffusionBase):
             
             self.mu[t] = self.mu[t] - self.lr_mu / math.sqrt(D_dim) * (
 
-                (z[t] - self.mu[t][None,:]) * \
+                (z_t - self.mu[t][None,:]) * \
                 
                 scores_t_normalized[:,None]
             
             # mean over N
             ).mean(0)
     
+    def sample_and_get_score(self, latents, prompts, timestep):
+        
+        batch_size = latents.shape[0]
+        zero_sigma = self.sigma * 1e-8
+        _, shift_projected = self.get_noise(batch_size, self.mu, zero_sigma, generator=None)
+
+        if timestep != self.num_sampling_steps:
+            # deterministically sample from k to K
+
+            eta = 1.0
+            given_noise = shift_projected[1:]
+
+            if "off-policy" in self.dev_modes:
+                eta = 0.0
+                given_noise = None
+
+            final_latents = self.pipe(
+                prompts,
+                latents=None,
+                output_type="latent",
+                given_noise=given_noise,
+                eta=eta,
+                num_inference_steps=self.num_sampling_steps,
+                guidance_scale=self.guidance_scale,
+                start_at_i=timestep,
+                start_at_i_latents=latents,
+            ).images
+        else:
+            final_latents = latents
+        
+        final_images = self.latents_to_images(final_latents)
+        scores, texts = self.get_scores(final_images)
+
+        return scores, texts, final_images
+
     @torch.no_grad()
     def training_step(self, _, __):
 
-        batch_size = self.training_batch_size
+        batch_size_max = max(self.training_batch_size)
         
-        epsilon, epsilon_projected = self.get_noise(batch_size, self.mu, self.sigma)
+        epsilon, epsilon_projected = self.get_noise(batch_size_max, self.mu, self.sigma)
 
         prior = epsilon_projected[0]
         given_noise = epsilon_projected[1:]
@@ -154,59 +195,62 @@ class GuideDiffusionWithOptimization(DiffusionBase):
             latents_trajectory.append(latent)
             return {}
 
-        all_images = []
+        generate_prompts = [self.generate_prompt for _ in range(batch_size_max)]
 
-        final_images = self.pipe(
-            [self.generate_prompt]*batch_size,
+        final_latents = self.pipe(
+            generate_prompts,
             latents=prior.type(torch.float16),
-            output_type="pil",
+            output_type="latent",
             given_noise=given_noise,
             num_inference_steps=self.num_sampling_steps,
             guidance_scale=self.guidance_scale,
             callback_on_step_end=callback_func,
         ).images
-
-        # deterministically sample x_{k -> K} for k in [objective_timesteps \ K]
-        for i in self.objective_timesteps[:-1].int().tolist():
-            
-            zero_sigma = self.sigma * 1e-8
-            _, shift_projected = self.get_noise(batch_size, self.mu, zero_sigma, generator=None)
-            start_at_i = i
-            start_at_i_latents = latents_trajectory[i]
-
-            images_i_to_K = self.pipe(
-                [self.generate_prompt]*batch_size,
-                latents=prior.type(torch.float16),
-                output_type="pil",
-                given_noise=shift_projected[1:],
-                num_inference_steps=self.num_sampling_steps,
-                guidance_scale=self.guidance_scale,
-                start_at_i=start_at_i,
-                start_at_i_latents=start_at_i_latents,
-            ).images
-            all_images.append(images_i_to_K)
         
-        all_images.append(final_images)
 
-        scores = torch.zeros((self.number_objectives, batch_size), device=self.device)
-        
+        scores_matrix = torch.full((self.num_sampling_steps+1, batch_size_max), float('nan'), device=self.device)
+        scores_list = []
         texts_list = []
-        for i in range(self.number_objectives):
-            score, text = self.get_scores(all_images[i])
-            scores[i] = score
-            texts_list.append(text)
+        images_list = []
 
-            self.log(f"score_f{i}_mean", score.mean())
-        
-        self.log_images(all_images[-1], stage="train")
-        self.log_score(scores[-1], stage="train")
-        self.log_ablation(images_list=all_images, texts_list=texts_list, scores_list=scores, stage="train")
+        for i, t in enumerate(self.objective_timesteps):
+            
+            batch_size = self.training_batch_size[i]
+            
+            select_indices = torch.floor(torch.arange(batch_size, dtype=torch.float32) * batch_size_max / batch_size).long()
+            scores, texts, images = self.sample_and_get_score(latents_trajectory[t][select_indices], [generate_prompts[i] for i in select_indices], t.item())
+            scores_matrix[t][select_indices] = scores
+            images_list.append(images)
+            texts_list.append(texts)
+            scores_list.append(scores)
+            self.log(f"score_f{i}_mean", scores.mean())
 
-        propagated_scores = torch.zeros((self.num_sampling_steps+1, batch_size), device=self.device)
-        propagated_scores = scores[self.timestep_objectives]
-        self.update_parameters(self._x_flatten(epsilon), propagated_scores)
+        # propagate scores
+        for k in range(self.num_sampling_steps+1):
+            for n in range(batch_size_max):
+                # if score[k][n] is nan, then assign from future score
+                if torch.isnan(scores_matrix[k][n]):
+                    # find the first future non-nan score
+                    for k_ in range(k+1, self.num_sampling_steps+1):
+                        if not torch.isnan(scores_matrix[k_][n]):
+                            scores_matrix[k][n] = scores_matrix[k_][n]
+                            break
+        self.update_parameters(self._x_flatten(epsilon), scores_matrix)
         self.log_params(self.mu, self.sigma)
-        
+
+        # fill nan in last step for logging purpose
+        nan_indices = scores_matrix[-1].isnan().nonzero().flatten()
+        if len(nan_indices) != 0:
+            fill_scores, _, _ = self.sample_and_get_score(latents_trajectory[-1][nan_indices], [generate_prompts[i] for i in nan_indices] ,self.num_sampling_steps)
+            filled_scores_matrix = scores_matrix.clone()
+            filled_scores_matrix[-1][nan_indices] = fill_scores
+        else:
+            filled_scores_matrix = scores_matrix
+        self.log_score(filled_scores_matrix[-1], stage="train")
+
+        self.log_images(images_list[-1], stage="train")
+        self.log_ablation(images_list=images_list, texts_list=texts_list, scores_list=scores_list, stage="train")
+
         # dummy
         self.optimizers().step()
 
@@ -252,8 +296,16 @@ class GuideDiffusionWithOptimization(DiffusionBase):
         prior = epsilon_projected[0]
         given_noise = epsilon_projected[1:]
 
+        if self.validation_generate_prompt is None:
+            prompts = [self.generate_prompt for _ in range(batch_size)]
+        elif isinstance(self.validation_generate_prompt, str):
+            prompts = [self.validation_generate_prompt]*batch_size
+        elif isinstance(self.validation_generate_prompt, list):
+            assert len(self.validation_generate_prompt) == batch_size
+            prompts = self.validation_generate_prompt
+            
         images = self.pipe(
-            [self.generate_prompt]*batch_size,
+            prompts,
             latents=prior.type(torch.float16),
             output_type="pil",
             given_noise=given_noise,
