@@ -26,7 +26,7 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class GuideDiffusionWithOptimization(DiffusionBase):
 
-    def __init__(self, lr_mu, lr_sigma, projection, training_batch_size, validation_batch_size, compile, number_objectives, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, dev_modes, validation_generate_prompt):
+    def __init__(self, lr_mu, lr_sigma, projection, training_batch_size, validation_batch_size, compile, number_objectives, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, validation_generate_prompt):
         super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompt, max_reward_value, compile)
 
         self.lr_mu = lr_mu
@@ -35,7 +35,6 @@ class GuideDiffusionWithOptimization(DiffusionBase):
         self.training_batch_size = [int(b) for b in str(training_batch_size).split(";")]
         self.validation_batch_size = validation_batch_size
         self.number_objectives = number_objectives
-        self.dev_modes = dev_modes.split(";")
         self.validation_generate_prompt = validation_generate_prompt
 
         mu = torch.zeros(self.num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
@@ -144,27 +143,15 @@ class GuideDiffusionWithOptimization(DiffusionBase):
             ).mean(0)
     
     def sample_and_get_score(self, latents, prompts, timestep):
-        
-        batch_size = latents.shape[0]
-        zero_sigma = self.sigma * 1e-8
-        _, shift_projected = self.get_noise(batch_size, self.mu, zero_sigma, generator=None)
 
         if timestep != self.num_sampling_steps:
             # deterministically sample from k to K
-
-            eta = 1.0
-            given_noise = shift_projected[1:]
-
-            if "off-policy" in self.dev_modes:
-                eta = 0.0
-                given_noise = None
-
             final_latents = self.pipe(
                 prompts,
                 latents=None,
                 output_type="latent",
-                given_noise=given_noise,
-                eta=eta,
+                given_noise=None,
+                eta=0.0,
                 num_inference_steps=self.num_sampling_steps,
                 guidance_scale=self.guidance_scale,
                 start_at_i=timestep,
@@ -217,7 +204,7 @@ class GuideDiffusionWithOptimization(DiffusionBase):
             
             batch_size = self.training_batch_size[i]
             
-            select_indices = torch.floor(torch.arange(batch_size, dtype=torch.float32) * batch_size_max / batch_size).long()
+            select_indices = torch.randperm(batch_size_max)[:3].sort(dim=0).values
             scores, texts, images = self.sample_and_get_score(latents_trajectory[t][select_indices], [generate_prompts[i] for i in select_indices], t.item())
             scores_matrix[t][select_indices] = scores
             images_list.append(images)
@@ -238,7 +225,7 @@ class GuideDiffusionWithOptimization(DiffusionBase):
         self.update_parameters(self._x_flatten(epsilon), scores_matrix)
         self.log_params(self.mu, self.sigma)
 
-        # fill nan in last step for logging purpose
+        # fill nan score in last step only for logging purpose, this score will not seen by algorithm
         nan_indices = scores_matrix[-1].isnan().nonzero().flatten()
         if len(nan_indices) != 0:
             fill_scores, _, _ = self.sample_and_get_score(latents_trajectory[-1][nan_indices], [generate_prompts[i] for i in nan_indices] ,self.num_sampling_steps)

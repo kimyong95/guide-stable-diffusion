@@ -28,9 +28,8 @@ model:
     lr_mu: 300
     lr_sigma: 30
     projection: True
-    training_batch_size: "16;16"
+    training_batch_size: "24;4;4"
     validation_batch_size: 16
-    dev_modes: ""
 
     reward_func: "gemini-question"
     generate_prompt: "A robotic cat and a robotic dog playing with a football on the moon. The cat wearing a hat, and dog wearing a scarf."
@@ -46,4 +45,4 @@ model:
     # reward_query_prompt: "Does the image accurately aligned with the prompt '{target_prompt}', why? Rate from 1 (inaccurate) to 5 (accurate).\nAnswer in the format: Reason=reason, Score=score."
     # max_reward_value: 5.0
 
-    number_objectives: 2
+    number_objectives: 3
