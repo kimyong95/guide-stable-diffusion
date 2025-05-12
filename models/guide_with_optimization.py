@@ -26,7 +26,7 @@ from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
 class GuideDiffusionWithOptimization(DiffusionBase):
 
-    def __init__(self, lr_mu, lr_sigma, projection, training_batch_size, validation_batch_size, compile, number_objectives, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, validation_generate_prompt):
+    def __init__(self, lr_mu, lr_sigma, projection, training_batch_size, validation_batch_size, compile, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, validation_generate_prompt):
         super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompt, max_reward_value, compile)
 
         self.lr_mu = lr_mu
@@ -34,8 +34,9 @@ class GuideDiffusionWithOptimization(DiffusionBase):
         self.projection = projection
         self.training_batch_size = [int(b) for b in str(training_batch_size).split(";")]
         self.validation_batch_size = validation_batch_size
-        self.number_objectives = number_objectives
         self.validation_generate_prompt = validation_generate_prompt
+
+        self.number_objectives = len(self.training_batch_size)
 
         mu = torch.zeros(self.num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
         self.register_buffer('mu', mu)
@@ -43,8 +44,7 @@ class GuideDiffusionWithOptimization(DiffusionBase):
         self.register_buffer('sigma', sigma) # entries is variance
 
         ###################### select objectives timestep ######################
-        # self.objective_timesteps = torch.floor( (torch.arange(number_objectives)+1) / number_objectives * (self.num_sampling_steps) )
-        
+
         self.pipe.scheduler.set_timesteps(self.num_sampling_steps)
         init_variance = torch.tensor([self.pipe.scheduler.init_noise_sigma]) ** 2
         variances = []
@@ -64,7 +64,7 @@ class GuideDiffusionWithOptimization(DiffusionBase):
         std_cum = torch.cat([init_variance**0.5, stds], dim=0).cumsum(dim=0)
         std_cum = std_cum / std_cum[-1]
         
-        self.objective_timesteps = torch.abs(std_cum.unsqueeze(0) -  ( (torch.arange(number_objectives)+1)/number_objectives).unsqueeze(1) ).argmin(dim=1)
+        self.objective_timesteps = torch.abs(std_cum.unsqueeze(0) -  ( (torch.arange(self.number_objectives)+1)/self.number_objectives).unsqueeze(1) ).argmin(dim=1)
         self.timestep_objectives = torch.bucketize(torch.arange(self.num_sampling_steps+1), self.objective_timesteps, right=False)
         ###################### timestep-objective mapping ######################
 
@@ -124,7 +124,7 @@ class GuideDiffusionWithOptimization(DiffusionBase):
 
             self.sigma[t] = 1 / (
                 
-                1/self.sigma[t] + self.lr_sigma * (
+                1/self.sigma[t] + self.lr_sigma / math.sqrt(D_dim) * (
                     (1/self.sigma[t])[None,:] * (z_t - self.mu[t,None,:]) * (z_t - self.mu[t,None,:]) * (1/self.sigma[t])[None,:] * \
                     
                     w[:,None]
@@ -133,7 +133,7 @@ class GuideDiffusionWithOptimization(DiffusionBase):
                 ).sum(0)
             )
             
-            self.mu[t] = self.mu[t] - self.lr_mu * (
+            self.mu[t] = self.mu[t] - self.lr_mu / math.sqrt(D_dim) * (
 
                 (z_t - self.mu[t][None,:]) * \
                 
