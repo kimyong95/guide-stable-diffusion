@@ -124,16 +124,16 @@ class GuideDiffusionWithOptimization(DiffusionBase):
 
             self.sigma[t] = 1 / (
                 
-                1/self.sigma[t] + self.lr_sigma / math.sqrt(D_dim) * (
+                1/self.sigma[t] + self.lr_sigma * (
                     (1/self.sigma[t])[None,:] * (z_t - self.mu[t,None,:]) * (z_t - self.mu[t,None,:]) * (1/self.sigma[t])[None,:] * \
                     
                     w[:,None]
 
-                # mean over N
-                ).mean(0)
+                # sum over N
+                ).sum(0)
             )
             
-            self.mu[t] = self.mu[t] - self.lr_mu / math.sqrt(D_dim) * (
+            self.mu[t] = self.mu[t] - self.lr_mu * (
 
                 (z_t - self.mu[t][None,:]) * \
                 
@@ -204,7 +204,7 @@ class GuideDiffusionWithOptimization(DiffusionBase):
             
             batch_size = self.training_batch_size[i]
             
-            select_indices = torch.randperm(batch_size_max)[:3].sort(dim=0).values
+            select_indices = torch.randperm(batch_size_max)[:batch_size].sort(dim=0).values
             scores, texts, images = self.sample_and_get_score(latents_trajectory[t][select_indices], [generate_prompts[i] for i in select_indices], t.item())
             scores_matrix[t][select_indices] = scores
             images_list.append(images)
