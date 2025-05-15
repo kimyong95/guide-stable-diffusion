@@ -1,0 +1,5 @@
+
+model:
+  init_args:
+    generate_prompt: "A cute puppy is soundly sleeping. An awake bear is petting the puppy's head."
+    reward_target_prompt: "A cute puppy is soundly sleeping. An awake bear is petting the puppy's head."

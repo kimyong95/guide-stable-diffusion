@@ -1,9 +1,0 @@
-
-model:
-  init_args:
-    generate_prompt: "A carton image showing a fluffy white cat and a fluffy black dog sitting under a futuristic robotic tree that grows red apples."
-    reward_target_prompts:
-    - "A carton image showing a futuristic robotic tree."
-    - "A carton image showing a futuristic robotic tree that grows red apples."
-    - "A carton image showing a fluffy cat and a fluffy dog sitting under a futuristic robotic tree that grows red apples."
-    - "A carton image showing a fluffy white cat and a fluffy black dog sitting under a futuristic robotic tree that grows red apples."

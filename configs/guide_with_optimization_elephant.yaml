@@ -1,9 +1,0 @@
-
-model:
-  init_args:
-    generate_prompt: "A yellow reindeer and a blue elephant standing on a teacup, with a giant lollipop behind them."
-    reward_target_prompts:
-    - "A reindeer and a elephant."
-    - "A yellow reindeer and a blue elephant."
-    - "A yellow reindeer and a blue elephant standing on a teacup."
-    - "A yellow reindeer and a blue elephant standing on a teacup, with a giant lollipop behind them."
