@@ -9,4 +9,4 @@ This project is built on [Pytorch Lightning](https://www.google.com/url?sa=t&sou
 3. To run the experiment: `python main fit --config configs/finetune_with_model.yaml`.
 4. To debug using vscode, simply run the `Finetune with Model` launch configuration.
 
-A self-contained code is available at `demo/fast_direct.py`. Note: It is not intended for exact reproduction of the paper results, as the implementation differs slightly.
+A self-contained code is available at `demo/fast_direct.py` for easy get started. Note: It is not intended for exact reproduction of the paper results, as the implementation differs slightly.
