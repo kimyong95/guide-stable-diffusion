@@ -250,7 +250,7 @@ class LlamaQuestion(RewardBase):
 class GemmaQuestion(RewardBase):
     def __init__(self):
         from transformers import AutoProcessor, Gemma3ForConditionalGeneration
-        model_id = "google/gemma-3-12b-it"
+        model_id = "google/gemma-3-4b-it"
         self.model = Gemma3ForConditionalGeneration.from_pretrained(model_id).eval()
         self.processor = AutoProcessor.from_pretrained(model_id)
     

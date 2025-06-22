@@ -18,62 +18,125 @@ from utils.utils import FunctionCallTracker, disable_train
 from diffusers import UNet2DModel
 import gpytorch
 import random
+from torch import nn
 from models.diffusion_base import find_closest_factors
 from palettable.colorbrewer.qualitative import Dark2_4
 colors = Dark2_4.mpl_colors
 
 from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
+
+class ExactGpModel(gpytorch.models.ExactGP):
+    def __init__(self, train_x, train_y, likelihood, x_dim):
+        super(ExactGpModel, self).__init__(train_x, train_y, likelihood)
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=x_dim))
+        self.covar_module.base_kernel.lengthscale = (x_dim) ** 0.5
+
+    def forward(self, x):
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+        
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+class ValueModel(nn.Module):
+    def __init__(self, dimension, noise_level = 1e-4) -> None:
+        super().__init__()
+        self.dim = dimension
+        self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
+        self.likelihood.noise = noise_level
+        self.likelihood.eval()
+
+        model = ExactGpModel(None, None, self.likelihood, x_dim=dimension)
+
+        self.model = model
+        self.model.eval()
+        self.model.requires_grad_(False)
+
+    def estimate_pseudo_target(self, x):
+        
+        device = x.device
+
+        if self.model.train_inputs == None or len(self.model.train_inputs) == 0:
+            return (x, torch.zeros_like(x, device=device))
+        
+        y_pred = []
+        y_grad = []
+
+        for xj in x:
+            with torch.enable_grad():
+                xj.requires_grad = True
+                yj = self.likelihood(self.model(xj.unsqueeze(0)))
+                grad = torch.autograd.grad(yj.mean, xj, create_graph=False, allow_unused=True)[0]
+                xj.requires_grad = False
+
+            y_pred.append(yj.mean.detach().cpu())
+            y_grad.append(grad.detach().cpu())
+
+        y_pred = torch.stack(y_pred).to(device)
+        y_grad = torch.stack(y_grad).to(device)
+        pseudo_direction = -y_grad
+        pseudo_target = x + pseudo_direction
+
+        return (pseudo_target, pseudo_direction)
+
+    def estimate_value(self, x):
+        device = x.device
+        y_mean = []
+        y_var = []
+        for xj in x:
+            yj = self.likelihood(self.model(xj.unsqueeze(0)))
+            y_mean.append(yj.mean.squeeze(0))
+            y_var.append(yj.variance.squeeze(0))
+
+        y_mean = torch.stack(y_mean).to(device)
+        y_var = torch.stack(y_var).to(device)
+
+        return y_mean, y_var
+
+
+    # x: data points
+    # y: lower is better
+    def add_model_data(self, x, y):
+        if self.model.train_inputs is not None and len(self.model.train_inputs) > 0:
+            x = torch.cat([self.model.train_inputs[0], x], dim=0)
+            y = torch.cat([self.model.train_targets, y], dim=0)
+
+        self.model.set_train_data(
+            inputs=x, 
+            targets=y,
+            strict=False,
+        )
+
+    def get_model_data(self):
+        return self.model.train_inputs[0], self.model.train_targets
+
 class GuideDiffusionWithOptimization(DiffusionBase):
 
-    def __init__(self, lr_mu, lr_sigma, projection, training_batch_size, validation_batch_size, compile, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, validation_generate_prompt):
+    def __init__(self, lr_mu, lr_sigma, projection, use_value_model, training_batch_size, validation_batch_size, compile, sd_model, generate_prompt, reward_query_prompt, reward_target_prompt, reward_func, max_reward_value, validation_generate_prompt):
         super().__init__(sd_model, generate_prompt, reward_func, reward_query_prompt, reward_target_prompt, max_reward_value, compile)
 
         self.lr_mu = lr_mu
         self.lr_sigma = lr_sigma
         self.projection = projection
-        self.training_batch_size = [int(b) for b in str(training_batch_size).split(";")]
+        self.training_batch_size = training_batch_size
         self.validation_batch_size = validation_batch_size
         self.validation_generate_prompt = validation_generate_prompt
+        self.use_value_model = use_value_model
 
-        self.number_objectives = len(self.training_batch_size)
+        self.dimension = self.channels * self.sample_size * self.sample_size
 
-        mu = torch.zeros(self.num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
+        self.value_model = ValueModel(self.dimension, noise_level=1e-4)
+
+        mu = torch.zeros(self.num_sampling_steps+1, self.dimension, dtype=torch.float32, requires_grad=False)
         self.register_buffer('mu', mu)
-        sigma = torch.ones(self.num_sampling_steps+1, self.channels * self.sample_size * self.sample_size, dtype=torch.float32, requires_grad=False)
+        sigma = torch.ones(self.num_sampling_steps+1, self.dimension, dtype=torch.float32, requires_grad=False)
         self.register_buffer('sigma', sigma) # entries is variance
-
-        ###################### select objectives timestep ######################
-
-        self.pipe.scheduler.set_timesteps(self.num_sampling_steps)
-        init_variance = torch.tensor([self.pipe.scheduler.init_noise_sigma]) ** 2
-        variances = []
-        stds = []
-        for t in self.pipe.scheduler.timesteps:
-            prev_t = t - self.pipe.scheduler.config.num_train_timesteps // self.pipe.scheduler.num_inference_steps
-            variance = self.pipe.scheduler._get_variance(t, prev_t)
-            eta = 1.0
-            variance_t = eta * variance
-            variances.append(variance_t)
-            stds.append(variance_t ** 0.5)
-        variances = torch.stack(variances)
-        stds = torch.stack(stds)
-
-        var_cum = torch.cat([init_variance, variances], dim=0).cumsum(dim=0)
-        var_cum = var_cum / var_cum[-1]
-        std_cum = torch.cat([init_variance**0.5, stds], dim=0).cumsum(dim=0)
-        std_cum = std_cum / std_cum[-1]
-        
-        self.objective_timesteps = torch.abs(std_cum.unsqueeze(0) -  ( (torch.arange(self.number_objectives)+1)/self.number_objectives).unsqueeze(1) ).argmin(dim=1)
-        self.timestep_objectives = torch.bucketize(torch.arange(self.num_sampling_steps+1), self.objective_timesteps, right=False)
-        ###################### timestep-objective mapping ######################
-
 
         # dummy parameters for pytorch lightning optimizer to work
         self.dummy = torch.nn.Parameter(torch.zeros(1))
         self.automatic_optimization = False
 
-    
     def get_noise(self, batch_size, mu, sigma, generator=None):
         batch_mu = einops.repeat(mu, 'T D -> T B D', B=batch_size)
 
@@ -104,6 +167,7 @@ class GuideDiffusionWithOptimization(DiffusionBase):
 
         # z: (T, B, D)
         # scores: (T, B)
+        # scores_var: (T, B)
 
         assert z.shape[0] == scores.shape[0] == self.mu.shape[0] == self.sigma.shape[0]
         assert z.shape[1] == scores.shape[1]
@@ -112,24 +176,25 @@ class GuideDiffusionWithOptimization(DiffusionBase):
         B_dim = z.shape[1]
         D_dim = self.mu.shape[1]
 
+        
         for t in range(T_dim):
             
-            scores_t = scores[t:].nanmean(0)
-            valid_mask = ~torch.isnan(scores_t)
-            scores_t = scores_t[valid_mask]
-            z_t = z[t][valid_mask]
+            # weighted sum over T
+            scores_t = (scores[t:]).mean(0)
+            z_t = z[t]
             scores_t_normalized = (scores_t - scores_t.mean()) / (scores_t.std() + 1e-8)
-
-            w = torch.exp( - scores_t_normalized) / torch.exp( - scores_t_normalized).sum()
+            
+            scores_t_softmaxed = nn.Softmax(dim=0)(-scores_t_normalized)
 
             self.sigma[t] = 1 / (
                 
                 1/self.sigma[t] + self.lr_sigma / math.sqrt(D_dim) * (
+
                     (1/self.sigma[t])[None,:] * (z_t - self.mu[t,None,:]) * (z_t - self.mu[t,None,:]) * (1/self.sigma[t])[None,:] * \
                     
-                    w[:,None]
-
-                # sum over N
+                    scores_t_softmaxed[:,None]
+                
+                # sum over B
                 ).sum(0)
             )
             
@@ -139,50 +204,30 @@ class GuideDiffusionWithOptimization(DiffusionBase):
                 
                 scores_t_normalized[:,None]
             
-            # mean over N
+            # mean over B
             ).mean(0)
-    
-    def sample_and_get_score(self, latents, prompts, timestep):
 
-        if timestep != self.num_sampling_steps:
-            # deterministically sample from k to K
-            final_latents = self.pipe(
-                prompts,
-                latents=None,
-                output_type="latent",
-                given_noise=None,
-                eta=0.0,
-                num_inference_steps=self.num_sampling_steps,
-                guidance_scale=self.guidance_scale,
-                start_at_i=timestep,
-                start_at_i_latents=latents,
-            ).images
-        else:
-            final_latents = latents
-        
-        final_images = self.latents_to_images(final_latents)
-        scores, texts = self.get_scores(final_images)
-
-        return scores, texts, final_images
 
     @torch.no_grad()
     def training_step(self, _, __):
 
-        batch_size_max = max(self.training_batch_size)
+        batch_size = self.training_batch_size
         
-        epsilon, epsilon_projected = self.get_noise(batch_size_max, self.mu, self.sigma)
+        epsilon, epsilon_projected = self.get_noise(batch_size, self.mu, self.sigma)
 
         prior = epsilon_projected[0]
         given_noise = epsilon_projected[1:]
 
         # collect latents trajectory
         latents_trajectory = [prior]
+        pred_samples_trajectory = []
+        
         def callback_func(self, index, timestep, callback_kwargs):
-            latent = callback_kwargs["latents"]
-            latents_trajectory.append(latent)
+            latents_trajectory.append(callback_kwargs["latents"])
+            pred_samples_trajectory.append(callback_kwargs["pred_original_sample"])
             return {}
 
-        generate_prompts = [self.generate_prompt for _ in range(batch_size_max)]
+        generate_prompts = [self.generate_prompt for _ in range(batch_size)]
 
         final_latents = self.pipe(
             generate_prompts,
@@ -192,51 +237,30 @@ class GuideDiffusionWithOptimization(DiffusionBase):
             num_inference_steps=self.num_sampling_steps,
             guidance_scale=self.guidance_scale,
             callback_on_step_end=callback_func,
+            callback_on_step_end_tensor_inputs=["latents", "pred_original_sample"],
         ).images
         
+        final_images = self.latents_to_images(final_latents)
+        final_scores, final_texts = self.get_scores(final_images)
 
-        scores_matrix = torch.full((self.num_sampling_steps+1, batch_size_max), float('nan'), device=self.device)
-        scores_list = []
-        texts_list = []
-        images_list = []
+        self.value_model.add_model_data(self._x_flatten(final_latents).to(torch.float32), final_scores)
 
-        for i, t in enumerate(self.objective_timesteps):
-            
-            batch_size = self.training_batch_size[i]
-            
-            select_indices = torch.randperm(batch_size_max)[:batch_size].sort(dim=0).values
-            scores, texts, images = self.sample_and_get_score(latents_trajectory[t][select_indices], [generate_prompts[i] for i in select_indices], t.item())
-            scores_matrix[t][select_indices] = scores
-            images_list.append(images)
-            texts_list.append(texts)
-            scores_list.append(scores)
-            self.log(f"score_f{i}_mean", scores.mean())
+        scores_trajectory = torch.zeros((self.num_sampling_steps+1, batch_size), dtype=torch.float32, device=self.device)
+        if self.use_value_model:
+            for k, pred_sample in enumerate(pred_samples_trajectory):
+                scores_k, scores_var_k = self.value_model.estimate_value(self._x_flatten(pred_sample).to(torch.float32))
+                scores_trajectory[k] = scores_k
+            scores_trajectory[-1] = final_scores
+        else:
+            scores_trajectory[:] = final_scores
 
-        # propagate scores
-        for k in range(self.num_sampling_steps+1):
-            for n in range(batch_size_max):
-                # if score[k][n] is nan, then assign from future score
-                if torch.isnan(scores_matrix[k][n]):
-                    # find the first future non-nan score
-                    for k_ in range(k+1, self.num_sampling_steps+1):
-                        if not torch.isnan(scores_matrix[k_][n]):
-                            scores_matrix[k][n] = scores_matrix[k_][n]
-                            break
-        self.update_parameters(self._x_flatten(epsilon), scores_matrix)
+        scores_trajectory = scores_trajectory
+
+        self.log_score(scores_trajectory[-1], stage="train")
+        self.update_parameters(self._x_flatten(epsilon), scores_trajectory)
         self.log_params(self.mu, self.sigma)
 
-        # fill nan score in last step only for logging purpose, this score will not seen by algorithm
-        nan_indices = scores_matrix[-1].isnan().nonzero().flatten()
-        if len(nan_indices) != 0:
-            fill_scores, _, _ = self.sample_and_get_score(latents_trajectory[-1][nan_indices], [generate_prompts[i] for i in nan_indices] ,self.num_sampling_steps)
-            filled_scores_matrix = scores_matrix.clone()
-            filled_scores_matrix[-1][nan_indices] = fill_scores
-        else:
-            filled_scores_matrix = scores_matrix
-        self.log_score(filled_scores_matrix[-1], stage="train")
-
-        self.log_images(images_list[-1], stage="train")
-        self.log_ablation(images_list=images_list, texts_list=texts_list, scores_list=scores_list, stage="train")
+        self.log_ablation(images_list=[final_images], texts_list=[final_texts], scores_list=[scores_trajectory[-1]], stage="train")
 
         # dummy
         self.optimizers().step()
@@ -288,8 +312,8 @@ class GuideDiffusionWithOptimization(DiffusionBase):
         elif isinstance(self.validation_generate_prompt, str):
             prompts = [self.validation_generate_prompt]*batch_size
         elif isinstance(self.validation_generate_prompt, list):
-            assert len(self.validation_generate_prompt) == batch_size
-            prompts = self.validation_generate_prompt
+            assert len(self.validation_generate_prompt) >= batch_size
+            prompts = self.validation_generate_prompt[:batch_size]
             
         images = self.pipe(
             prompts,

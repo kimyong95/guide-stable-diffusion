@@ -1,4 +1,5 @@
 model:
   init_args:
+    reward_func: "aesthetic"
     generate_prompt: ["cat", "dog", "horse", "monkey", "rabbit", "zebra", "spider", "bird", "sheep", "deer", "cow", "goat", "lion", "tiger", "bear", "raccoon", "fox", "wolf", "lizard", "beetle", "ant", "butterfly", "fish", "shark", "whale", "dolphin", "squirrel", "mouse", "rat", "snake", "turtle", "frog", "chicken", "duck", "goose", "bee", "pig", "turkey", "fly", "llama", "camel", "bat", "gorilla", "hedgehog", "kangaroo"]
     validation_generate_prompt: ["elephant", "eagle", "pigeon", "hippo", "hamster", "otter", "panda", "reindeer", "owl", "penguin", "flamingo", "seal", "koala", "giraffe", "parrot", "cheetah"]

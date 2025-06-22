@@ -25,10 +25,10 @@ model:
   init_args:
     compile: True
     sd_model: sdxl-ddim
-    lr_mu: 256
+    lr_mu: 256 # sqrt(d)
     lr_sigma: 1
     projection: True
-    training_batch_size: "24;4;4"
+    training_batch_size: 32
     validation_batch_size: 16
 
     reward_func: "gemini-question"
@@ -36,11 +36,5 @@ model:
     reward_target_prompt: "A robotic cat and a robotic dog playing with a football on the moon. The cat wearing a hat, and dog wearing a scarf."
     reward_query_prompt: "Does the image accurately aligned with the prompt '{target_prompt}', why? Answer score=0 (no) or score=1 (yes).\nAnswer in the format: Reason=reason, Score=score."
     max_reward_value: 1.0
-    
-    # reward_func: "aesthetic"
 
-    # reward_func: "gemma-question"
-    # generate_prompt: "A robotic cat and a robotic dog playing with a football on the moon. The cat wearing a hat, and dog wearing a scarf."
-    # reward_target_prompt: "A robotic cat and a robotic dog playing with a football on the moon. The cat wearing a hat, and dog wearing a scarf."
-    # reward_query_prompt: "Does the image accurately aligned with the prompt '{target_prompt}', why? Rate from 1 (inaccurate) to 5 (accurate).\nAnswer in the format: Reason=reason, Score=score."
-    # max_reward_value: 5.0
+    use_value_model: True
