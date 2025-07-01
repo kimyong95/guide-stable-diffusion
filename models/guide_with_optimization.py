@@ -1,4 +1,3 @@
-
 import torch
 import numpy as np
 import einops
@@ -18,6 +17,7 @@ from utils.utils import FunctionCallTracker, disable_train
 from diffusers import UNet2DModel
 import gpytorch
 import random
+from contextlib import contextmanager
 from torch import nn
 from models.diffusion_base import find_closest_factors
 from palettable.colorbrewer.qualitative import Dark2_4
@@ -25,12 +25,12 @@ colors = Dark2_4.mpl_colors
 
 from models.guidance_models import GpGuidanceModel, NnGuidanceModel
 
-
+    
 class ExactGpModel(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, likelihood, x_dim):
         super(ExactGpModel, self).__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean()
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=x_dim))
+        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
         self.covar_module.base_kernel.lengthscale = (x_dim) ** 0.5
 
     def forward(self, x):
@@ -53,63 +53,32 @@ class ValueModel(nn.Module):
         self.model.eval()
         self.model.requires_grad_(False)
 
-    def estimate_pseudo_target(self, x):
-        
+    def predict(self, x):
         device = x.device
-
-        if self.model.train_inputs == None or len(self.model.train_inputs) == 0:
-            return (x, torch.zeros_like(x, device=device))
+        self.model.to(device)
+        self.likelihood.to(device)
         
-        y_pred = []
-        y_grad = []
+        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+            y_preds = self.likelihood(self.model(x))
+        
+        y_preds_mean = y_preds.mean.to(device)
+        y_preds_var = y_preds.variance.to(device)
 
-        for xj in x:
-            with torch.enable_grad():
-                xj.requires_grad = True
-                yj = self.likelihood(self.model(xj.unsqueeze(0)))
-                grad = torch.autograd.grad(yj.mean, xj, create_graph=False, allow_unused=True)[0]
-                xj.requires_grad = False
-
-            y_pred.append(yj.mean.detach().cpu())
-            y_grad.append(grad.detach().cpu())
-
-        y_pred = torch.stack(y_pred).to(device)
-        y_grad = torch.stack(y_grad).to(device)
-        pseudo_direction = -y_grad
-        pseudo_target = x + pseudo_direction
-
-        return (pseudo_target, pseudo_direction)
-
-    def estimate_value(self, x):
-        device = x.device
-        y_mean = []
-        y_var = []
-        for xj in x:
-            yj = self.likelihood(self.model(xj.unsqueeze(0)))
-            y_mean.append(yj.mean.squeeze(0))
-            y_var.append(yj.variance.squeeze(0))
-
-        y_mean = torch.stack(y_mean).to(device)
-        y_var = torch.stack(y_var).to(device)
-
-        return y_mean, y_var
-
+        return y_preds_mean.to(device), y_preds_var.to(device)
 
     # x: data points
     # y: lower is better
     def add_model_data(self, x, y):
-        if self.model.train_inputs is not None and len(self.model.train_inputs) > 0:
-            x = torch.cat([self.model.train_inputs[0], x], dim=0)
-            y = torch.cat([self.model.train_targets, y], dim=0)
 
-        self.model.set_train_data(
-            inputs=x, 
-            targets=y,
-            strict=False,
-        )
+        if self.model.train_inputs is None:
+            self.model.set_train_data(inputs=x, targets=y, strict=False)
+
+        else:
+            self.model = self.model.get_fantasy_model(x, y)
 
     def get_model_data(self):
         return self.model.train_inputs[0], self.model.train_targets
+
 
 class GuideDiffusionWithOptimization(DiffusionBase):
 
@@ -248,7 +217,7 @@ class GuideDiffusionWithOptimization(DiffusionBase):
         scores_trajectory = torch.zeros((self.num_sampling_steps+1, batch_size), dtype=torch.float32, device=self.device)
         if self.use_value_model:
             for k, pred_sample in enumerate(pred_samples_trajectory):
-                scores_k, scores_var_k = self.value_model.estimate_value(self._x_flatten(pred_sample).to(torch.float32))
+                scores_k, scores_var_k = self.value_model.predict(self._x_flatten(pred_sample).to(torch.float32))
                 scores_trajectory[k] = scores_k
             scores_trajectory[-1] = final_scores
         else:

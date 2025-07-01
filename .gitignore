@@ -12,3 +12,4 @@ tmp/**/*
 oneflow*
 results/**/*
 results-molecules/**/*
+results-optimize/**/*
