@@ -152,7 +152,7 @@ class ValueModel(nn.Module):
         self.model.requires_grad_(False)
 
         self.x_scaler = BaseScaler(dimension)
-        self.y_scaler = BaseScaler(1)
+        self.y_scaler = StandardScaler(1)
 
         self.all_data = {
             "x": torch.empty(0, dimension, dtype=torch.float32, device='cpu'),
@@ -259,13 +259,12 @@ class GuideDiffusionWithOptimization(DiffusionBase):
         B_dim = z.shape[1]
         D_dim = self.mu.shape[1]
 
-        
+
         for t in range(T_dim):
             
-            # weighted sum over T
-            scores_t = (scores[t:]).mean(0)
+            scores_t = scores[t:].mean(0)
             z_t = z[t]
-            scores_t_normalized = (scores_t - scores_t.mean()) / (scores_t.std() + 1e-8)
+            scores_t_normalized = (scores_t - scores_t.mean()) / scores_t.std().clamp(min=1e-8)
             
             scores_t_softmaxed = nn.Softmax(dim=0)(-scores_t_normalized)
 
