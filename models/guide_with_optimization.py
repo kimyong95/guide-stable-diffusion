@@ -169,6 +169,7 @@ class ValueModel(nn.Module):
         
         y_preds_mean = self.y_scaler.inverse_transform(y_preds.mean.to(device).unsqueeze(-1)).squeeze(-1)
         y_preds_var = y_preds.variance.to(device)
+        torch.cuda.empty_cache()
 
         return y_preds_mean.to(device), y_preds_var.to(device)
 
